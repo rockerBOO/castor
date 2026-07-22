@@ -74,6 +74,53 @@ func TestRendererAcceptsContainer(t *testing.T) {
 	}
 }
 
+// avReceiver mirrors the audio envelope the device package pairs with a renderer
+// that advertises AAC and AC-3: stereo-capped AAC (its multichannel form is a
+// separate, rarely-advertised profile) and uncapped AC-3 (inherently surround).
+var avReceiver = Renderer{
+	Audio: []AudioSupport{
+		{Codec: CodecAAC, MaxChannels: 2},
+		{Codec: CodecAC3},
+	},
+}
+
+func TestRendererSupportsAudioCodec(t *testing.T) {
+	if !avReceiver.SupportsAudioCodec(CodecAC3) {
+		t.Error("an AC-3 renderer should support AC-3")
+	}
+	if avReceiver.SupportsAudioCodec(CodecEAC3) {
+		t.Error("a renderer that advertises no E-AC-3 must not report it")
+	}
+}
+
+func TestRendererCanCopyAudio(t *testing.T) {
+	audio := func(c Codec, ch int) ProbeInfo { return ProbeInfo{AudioCodec: c, AudioChannels: ch} }
+	tests := []struct {
+		name string
+		info ProbeInfo
+		want bool
+	}{
+		{"stereo aac copies", audio(CodecAAC, 2), true},
+		{"5.1 aac exceeds the stereo aac ceiling", audio(CodecAAC, 6), false},
+		{"unknown-channel aac with matching codec is trusted", audio(CodecAAC, 0), true},
+		{"5.1 ac3 copies (surround codec, no ceiling)", audio(CodecAC3, 6), true},
+		{"7.1 ac3 copies (surround codec, no ceiling)", audio(CodecAC3, 8), true},
+		{"unadvertised codec rejected", audio(CodecEAC3, 6), false},
+		{"zero value rejected", ProbeInfo{}, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := avReceiver.CanCopyAudio(tt.info); got != tt.want {
+				t.Errorf("CanCopyAudio = %v, want %v", got, tt.want)
+			}
+		})
+	}
+	// A renderer with no audio envelope never reports a copy-eligible track.
+	if (Renderer{}).CanCopyAudio(audio(CodecAC3, 6)) {
+		t.Error("empty renderer should copy no audio")
+	}
+}
+
 func withProfile(v ProbeInfo, p string) ProbeInfo { v.VideoProfile = p; return v }
 func withHeight(v ProbeInfo, h int) ProbeInfo     { v.VideoHeight = h; return v }
 func withBitDepth(v ProbeInfo, d int) ProbeInfo   { v.VideoBitDepth = d; return v }

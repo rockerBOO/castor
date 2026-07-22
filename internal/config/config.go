@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/stupside/castor/internal/cast"
+	"github.com/stupside/castor/internal/cast/core"
 	"github.com/stupside/castor/internal/cast/whisper"
 	"github.com/stupside/castor/internal/source/extract"
 	"github.com/stupside/castor/internal/source/resolve"
@@ -36,11 +37,13 @@ type TMDB struct {
 
 func (c *Config) Cast() cast.Config {
 	return cast.Config{
-		Device:    c.Device,
-		Network:   c.Network,
-		Transcode: c.Transcode,
-		Whisper:   c.Whisper,
-		Resolver:  c.Resolver,
+		Config: core.Config{
+			Device:    c.Device,
+			Network:   c.Network,
+			Transcode: c.Transcode,
+			Resolver:  c.Resolver,
+		},
+		Whisper: c.Whisper,
 	}
 }
 

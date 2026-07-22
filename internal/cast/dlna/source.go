@@ -1,4 +1,4 @@
-package cast
+package dlna
 
 import (
 	"cmp"
@@ -10,9 +10,11 @@ import (
 	"slices"
 	"time"
 
+	"github.com/stupside/castor/internal/cast/core"
 	"github.com/stupside/castor/internal/cast/ffmpeg"
 	"github.com/stupside/castor/internal/cast/spool"
 	"github.com/stupside/castor/internal/cast/whisper"
+	"github.com/stupside/castor/internal/media"
 )
 
 // pull is the running upstream download. Exactly one pull touches the source
@@ -35,16 +37,16 @@ type pull struct {
 
 // startPull launches the upstream ffmpeg. Its mpegts output lands in sp; the
 // optional PCM output is exposed as pull.pcm.
-func startPull(ctx context.Context, cfg TranscodeConfig, plan Plan, sp *spool.Spool, wantPCM bool) (*pull, error) {
+func startPull(ctx context.Context, cfg core.TranscodeConfig, resolved *media.Stream, sp *spool.Spool, wantPCM bool) (*pull, error) {
 	args := ffmpeg.PullArgs(ffmpeg.PullOptions{
-		SourceURL:         plan.SourceURL,
-		SourceHeaders:     plan.SourceHeaders,
-		SourceContentType: plan.SourceContentType,
+		SourceURL:         resolved.URL,
+		SourceHeaders:     resolved.Headers,
+		SourceContentType: resolved.ContentType,
 		RWTimeoutMicros:   cfg.RWTimeout.Microseconds(),
 		Verbose:           slog.Default().Enabled(ctx, slog.LevelDebug),
 		PCM:               wantPCM,
 		PCMSampleRate:     whisper.SampleRate,
-		Live:              plan.Live,
+		Live:              resolved.Live,
 	})
 
 	var opts []ffmpeg.StartOption
@@ -58,17 +60,17 @@ func startPull(ctx context.Context, cfg TranscodeConfig, plan Plan, sp *spool.Sp
 
 	slog.InfoContext(ctx, "upstream pull started",
 		"pcm", wantPCM,
-		"source", plan.SourceURL.String(),
-		"header_keys", slices.Sorted(maps.Keys(plan.SourceHeaders)),
+		"source", resolved.URL.String(),
+		"header_keys", slices.Sorted(maps.Keys(resolved.Headers)),
 	)
 	// Full invocation at debug so the pull can be reproduced by hand
 	// (ffmpeg <args>) to isolate source/network from the rest of the pipeline.
 	slog.DebugContext(ctx, "puller ffmpeg command", "path", cfg.FFmpegPath, "args", args)
 
-	p := &pull{pcm: proc.Extra, proc: proc, spool: sp, done: make(chan struct{})}
-	go p.logProgress(ctx)
-	go p.run(ctx)
-	return p, nil
+	pu := &pull{pcm: proc.Extra, proc: proc, spool: sp, done: make(chan struct{})}
+	go pu.logProgress(ctx)
+	go pu.run(ctx)
+	return pu, nil
 }
 
 // run copies the remuxed stream into the spool and settles the pull's

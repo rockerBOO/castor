@@ -175,9 +175,25 @@ func videoSupportFor(codec media.Codec) media.VideoSupport {
 	}
 }
 
+// audioSupportFor builds the copy envelope for an audio codec. The Sink carries
+// no channel count, so AAC (which a renderer commonly decodes stereo-only, its
+// multichannel form being a separate profile most sets don't list) is capped at
+// stereo: an advertised AAC is trusted to copy a stereo track but a 5.1 AAC
+// source re-encodes to a Dolby codec instead. AC-3/E-AC-3 are inherently
+// surround, so their advertised support is trusted at full channel count.
+func audioSupportFor(codec media.Codec) media.AudioSupport {
+	if codec == media.CodecAAC {
+		return media.AudioSupport{Codec: codec, MaxChannels: 2}
+	}
+	return media.AudioSupport{Codec: codec}
+}
+
 // discoverableCodecs is the fixed order capabilities are reported in, so a given
 // Sink always yields the same Renderer (and the same is testable).
-var discoverableCodecs = []media.Codec{media.CodecH264, media.CodecHEVC}
+var (
+	discoverableCodecs      = []media.Codec{media.CodecH264, media.CodecHEVC}
+	discoverableAudioCodecs = []media.Codec{media.CodecAAC, media.CodecAC3, media.CodecEAC3}
+)
 
 // fallbackCaps is the conservative envelope used when negotiation yields nothing
 // usable: H.264 in MPEG-TS, which every DLNA renderer we target decodes. This is
@@ -196,6 +212,7 @@ func fallbackCaps() media.Renderer {
 // and vendor-specific, so anything unrecognised is skipped rather than rejected.
 func parseSinkProtocolInfo(sink string) media.Renderer {
 	present := map[media.Codec]bool{}
+	audioPresent := map[media.Codec]bool{}
 	containers := map[string]bool{}
 	for entry := range strings.SplitSeq(sink, ",") {
 		fields := strings.SplitN(strings.TrimSpace(entry), ":", 4)
@@ -210,6 +227,9 @@ func parseSinkProtocolInfo(sink string) media.Renderer {
 		if c, ok := codecFromProfile(mime, info); ok {
 			present[c] = true
 		}
+		if c, ok := audioFromProfile(mime, info); ok {
+			audioPresent[c] = true
+		}
 		if ct, ok := containerFromMIME(mime); ok {
 			containers[ct] = true
 		}
@@ -219,6 +239,11 @@ func parseSinkProtocolInfo(sink string) media.Renderer {
 	for _, c := range discoverableCodecs {
 		if present[c] {
 			r.Video = append(r.Video, videoSupportFor(c))
+		}
+	}
+	for _, c := range discoverableAudioCodecs {
+		if audioPresent[c] {
+			r.Audio = append(r.Audio, audioSupportFor(c))
 		}
 	}
 	for _, ct := range []string{"video/mp2t", media.MP4} {
@@ -237,6 +262,22 @@ func codecFromProfile(mime, pn string) (media.Codec, bool) {
 		return media.CodecHEVC, true
 	case strings.Contains(pn, "AVC") || strings.Contains(pn, "H264") || strings.Contains(mime, "avc") || strings.Contains(mime, "h264"):
 		return media.CodecH264, true
+	}
+	return "", false
+}
+
+// audioFromProfile identifies an audio codec a Sink entry advertises, from its
+// audio MIME type or the audio token in a combined AV DLNA.ORG_PN (already
+// upper-cased) such as AVC_TS_HD_50_AC3_ISO or AVC_MP4_MP_HD_AAC. E-AC-3 is
+// checked before AC-3 because its tokens ("EAC3", "DD+") contain the AC-3 ones.
+func audioFromProfile(mime, pn string) (media.Codec, bool) {
+	switch {
+	case strings.Contains(pn, "EAC3") || strings.Contains(mime, "eac3") || strings.Contains(mime, "dd+"):
+		return media.CodecEAC3, true
+	case strings.Contains(pn, "AC3") || strings.Contains(mime, "ac3") || strings.Contains(mime, "dolby.dd"):
+		return media.CodecAC3, true
+	case strings.Contains(pn, "AAC") || strings.Contains(mime, "aac") || mime == "audio/mp4":
+		return media.CodecAAC, true
 	}
 	return "", false
 }

@@ -1,4 +1,4 @@
-package cast
+package dlna
 
 import (
 	"testing"
@@ -58,13 +58,13 @@ func TestSelectVideoEncoder(t *testing.T) {
 	}
 }
 
-// TestPreferredCodecsHaveTargets guards the coupling between the codec ladder and
-// the bitrate map: a preferred codec with no target would transcode unbounded
-// (no -maxrate), silently reintroducing the rebuffering these targets fix.
-func TestPreferredCodecsHaveTargets(t *testing.T) {
+// TestPreferredVideoCodecsHaveTargets guards the coupling between the codec
+// ladder and the bitrate map: a preferred codec with no target would transcode
+// unbounded (no -maxrate), silently reintroducing the rebuffering these fix.
+func TestPreferredVideoCodecsHaveTargets(t *testing.T) {
 	for _, c := range codecPreference {
-		if _, ok := dlnaVideoTargets[c]; !ok {
-			t.Errorf("codec %q is in codecPreference but has no dlnaVideoTargets entry", c)
+		if _, ok := videoTargets[c]; !ok {
+			t.Errorf("codec %q is in codecPreference but has no videoTargets entry", c)
 		}
 	}
 }

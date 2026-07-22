@@ -194,10 +194,40 @@ func TestParseSinkProtocolInfo(t *testing.T) {
 		t.Error("10-bit H.264 must not be copy-eligible")
 	}
 
+	// Audio codecs ride the combined AV profile tokens: AVC_MP4_..._AAC lights up
+	// AAC, AVC_TS_HD_50_AC3_ISO lights up AC-3; nothing carries E-AC-3.
+	if !caps.SupportsAudioCodec(media.CodecAAC) {
+		t.Error("an AAC profile should advertise AAC audio")
+	}
+	if !caps.SupportsAudioCodec(media.CodecAC3) {
+		t.Error("an AC3 TS profile should advertise AC-3 audio")
+	}
+	if caps.SupportsAudioCodec(media.CodecEAC3) {
+		t.Error("no E-AC-3 token present; must not advertise E-AC-3")
+	}
+
+	// AAC is trusted stereo-only: a stereo track copies, a 5.1 track does not.
+	if !caps.CanCopyAudio(media.ProbeInfo{AudioCodec: media.CodecAAC, AudioChannels: 2}) {
+		t.Error("stereo AAC should be copy-eligible")
+	}
+	if caps.CanCopyAudio(media.ProbeInfo{AudioCodec: media.CodecAAC, AudioChannels: 6}) {
+		t.Error("5.1 AAC must not copy to a stereo-AAC renderer")
+	}
+	// AC-3 is inherently surround: a 5.1 track copies intact.
+	if !caps.CanCopyAudio(media.ProbeInfo{AudioCodec: media.CodecAC3, AudioChannels: 6}) {
+		t.Error("5.1 AC-3 should be copy-eligible on an AC-3 renderer")
+	}
+
 	// A renderer advertising an HEVC TS profile lights up HEVC.
 	hevcSink := avcSink + ",http-get:*:video/mp2t:DLNA.ORG_PN=HEVC_TS_MAIN_HD"
 	if !parseSinkProtocolInfo(hevcSink).SupportsCodec(media.CodecHEVC) {
 		t.Error("HEVC_TS sink should advertise HEVC")
+	}
+
+	// An explicit E-AC-3 audio entry is detected and not misread as AC-3.
+	eac3Sink := avcSink + ",http-get:*:audio/eac3:DLNA.ORG_PN=EAC3"
+	if !parseSinkProtocolInfo(eac3Sink).SupportsAudioCodec(media.CodecEAC3) {
+		t.Error("an EAC3 entry should advertise E-AC-3")
 	}
 
 	// Nothing usable yields no video codecs; the caller substitutes fallbackCaps.

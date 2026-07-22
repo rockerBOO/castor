@@ -16,4 +16,6 @@ type ProbeInfo struct {
 	VideoBitDepth int  // derived from pix_fmt (8, 10, 12)
 	VideoHDR      bool // PQ (smpte2084) or HLG (arib-std-b67) transfer
 
+	AudioCodec    Codec // e.g. CodecAAC, CodecAC3
+	AudioChannels int   // channel count (2 = stereo, 6 = 5.1, 8 = 7.1), 0 if unknown
 }

@@ -1,4 +1,4 @@
-package cast
+package dlna
 
 import (
 	"context"
@@ -9,6 +9,7 @@ import (
 
 	"golang.org/x/sync/errgroup"
 
+	"github.com/stupside/castor/internal/cast/core"
 	"github.com/stupside/castor/internal/cast/ffmpeg"
 	"github.com/stupside/castor/internal/cast/spool"
 	"github.com/stupside/castor/internal/cast/whisper"
@@ -18,14 +19,14 @@ import (
 
 // runSpooled is the read-once cast: puller → spool (+ PCM → whisper) → tail
 // → encoder (drawtext burn-in) → replay server → device. Each stage lives in
-// its own file; this function only wires them together.
+// its own file; this method only wires them together.
 //
 // Lifecycle: a cancellable context fed into errgroup. Defer order matters and
 // is LIFO — cancel runs first (signals every goroutine and kills both ffmpeg
 // processes), g.Wait blocks until they've unwound, then a connected-but-
 // unclaimed device is closed (its goroutine has finished, so the future is
 // settled), and only then is the work directory removed.
-func runSpooled(parentCtx context.Context, cfg Config, plan Plan, localIP string, connect func(ctx context.Context) (device.Device, error)) error {
+func (s *Strategy) runSpooled(parentCtx context.Context, resolved *media.Stream, localIP string) error {
 	workDir, err := os.MkdirTemp("", "castor-")
 	if err != nil {
 		return fmt.Errorf("creating work directory: %w", err)
@@ -43,7 +44,7 @@ func runSpooled(parentCtx context.Context, cfg Config, plan Plan, localIP string
 	// Discover + connect the renderer concurrently with everything below. It
 	// isn't needed until the playback gate opens, and SSDP discovery + connect
 	// can take seconds — seconds the short-lived signed source URL can't spare.
-	dev.connect(ctx, g, connect)
+	dev.connect(ctx, g, s.cfg)
 
 	sp, err := spool.New(filepath.Join(workDir, "spool.ts"))
 	if err != nil {
@@ -51,10 +52,11 @@ func runSpooled(parentCtx context.Context, cfg Config, plan Plan, localIP string
 	}
 
 	// The subtitle decision must land before the pull starts: it determines
-	// whether the puller opens a PCM output at all.
-	subs := newSubtitles(ctx, cfg, plan, workDir)
+	// whether the puller opens a PCM output at all. newSubtitles returns nil
+	// unless whisper is enabled.
+	subs := newSubtitles(ctx, s.whisper, workDir)
 
-	pl, err := startPull(ctx, cfg.Transcode, plan, sp, subs != nil)
+	pl, err := startPull(ctx, s.cfg.Transcode, resolved, sp, subs != nil)
 	if err != nil {
 		return err
 	}
@@ -84,26 +86,35 @@ func runSpooled(parentCtx context.Context, cfg Config, plan Plan, localIP string
 	// to decide whether the source video can be stream-copied into MPEG-TS or
 	// must be re-encoded. A failed or partial probe leaves srcInfo zero, which
 	// CanCopyVideo rejects, i.e. it falls back to a transcode.
-	srcInfo, err := ffmpeg.Probe(ctx, cfg.Resolver.FFprobePath, sp.Path())
+	srcInfo, err := ffmpeg.Probe(ctx, s.cfg.Resolver.FFprobePath, sp.Path(), nil)
 	if err != nil {
 		slog.WarnContext(ctx, "spool probe failed; will re-encode video", "error", err)
 	}
 
-	opts := *plan.Transcode
+	opts := ffmpeg.EncodeOptions{
+		OutputFormat:        "mpegts",
+		VideoMaxHeight:      s.cfg.Resolver.MaxHeight,
+		KeyframeIntervalSec: keyframeSeconds,
+	}
 	hasSubs := subs != nil
 	caps := d.Capabilities()
-	if !hasSubs && withinMaxHeight(srcInfo, cfg.Resolver.MaxHeight) && caps.CanCopyVideo(srcInfo) {
-		// Copy the video bitstream untouched; audio is still re-encoded to AAC.
+
+	// Audio is resolved independently of the video decision: it can be copied
+	// (preserving 5.1/7.1) even when the video must be re-encoded, and vice versa.
+	core.ResolveAudio(&opts, caps, srcInfo)
+
+	if !hasSubs && withinMaxHeight(srcInfo, s.cfg.Resolver.MaxHeight) && caps.CanCopyVideo(srcInfo) {
+		// Copy the video bitstream untouched.
 		opts.VideoEncoder = nil
 	} else {
 		// Re-encode. Pick the most efficient codec the renderer advertises and
 		// this host can encode in hardware (HEVC at half the bitrate, else
 		// H.264), then apply that codec's VBV-capped bitrate target.
 		enc := selectVideoEncoder(caps, func(c media.Codec) (ffmpeg.Encoder, bool) {
-			return ffmpeg.SelectEncoder(ctx, cfg.Transcode.FFmpegPath, c)
+			return ffmpeg.SelectEncoder(ctx, s.cfg.Transcode.FFmpegPath, c)
 		})
 		opts.VideoEncoder = &enc
-		t := dlnaVideoTargets[enc.Codec]
+		t := videoTargets[enc.Codec]
 		opts.VideoBitrate, opts.VideoMaxrate, opts.VideoBufsize = t.bitrate, t.maxrate, t.bufsize
 	}
 
@@ -116,6 +127,9 @@ func runSpooled(parentCtx context.Context, cfg Config, plan Plan, localIP string
 		"source_codec", string(srcInfo.VideoCodec),
 		"source_profile", srcInfo.VideoProfile,
 		"source_height", srcInfo.VideoHeight,
+		"audio_codec", opts.AudioCodec,
+		"source_audio_codec", string(srcInfo.AudioCodec),
+		"source_audio_channels", srcInfo.AudioChannels,
 		"subtitles", hasSubs,
 	)
 
@@ -136,17 +150,17 @@ func runSpooled(parentCtx context.Context, cfg Config, plan Plan, localIP string
 	if subs != nil {
 		startOpts = append(startOpts, ffmpeg.WithExtraPipe()) // -progress on fd 3
 	}
-	proc, err := ffmpeg.Start(ctx, cfg.Transcode.FFmpegPath, ffmpeg.EncodeArgs(opts), startOpts...)
+	proc, err := ffmpeg.Start(ctx, s.cfg.Transcode.FFmpegPath, ffmpeg.EncodeArgs(opts), startOpts...)
 	if err != nil {
 		return fmt.Errorf("starting transcode: %w", err)
 	}
-	defer finishEncoder(ctx, proc)
+	defer core.FinishEncoder(ctx, proc)
 
 	if subs != nil && proc.Extra != nil {
 		subs.follow(ctx, g, proc.Extra)
 	}
 
-	return serveToDevice(ctx, plan, d, localIP, proc.Stdout, workDir)
+	return core.ServeToDevice(ctx, d, localIP, outputContentType, proc.Stdout, workDir)
 }
 
 // codecPreference ranks re-encode target codecs by efficiency, most efficient
@@ -197,9 +211,9 @@ func newDeviceFuture() *deviceFuture {
 	return &deviceFuture{ch: make(chan device.Device, 1)}
 }
 
-func (f *deviceFuture) connect(ctx context.Context, g *errgroup.Group, connect func(ctx context.Context) (device.Device, error)) {
+func (f *deviceFuture) connect(ctx context.Context, g *errgroup.Group, cfg core.Config) {
 	g.Go(func() error {
-		dev, err := connect(ctx)
+		dev, err := core.Connect(ctx, cfg)
 		if err != nil {
 			return err
 		}

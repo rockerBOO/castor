@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"os/exec"
 	"strings"
 
@@ -14,15 +15,18 @@ import (
 // Probe runs ffprobe against input (a URL or a local file path) and returns the
 // per-track codec details as a media.ProbeInfo (the domain type). It is safe to
 // point at a still-growing local spool: ffprobe reads from the start, analyses
-// the leading packets, and returns.
-func Probe(ctx context.Context, ffprobePath, input string) (media.ProbeInfo, error) {
+// the leading packets, and returns. headers are the HTTP request headers for a
+// network input behind a proxy/CDN (Referer, Cookie, etc.); pass nil for a local
+// file.
+func Probe(ctx context.Context, ffprobePath, input string, headers http.Header) (media.ProbeInfo, error) {
 	args := []string{
 		"-v", "error",
 		"-print_format", "json",
 		"-show_entries",
-		"stream=codec_type,codec_name,profile,height,pix_fmt,color_transfer",
-		input,
+		"stream=codec_type,codec_name,profile,height,pix_fmt,color_transfer,channels",
 	}
+	args = append(args, media.HeaderArgs(headers)...)
+	args = append(args, input)
 
 	out, err := exec.CommandContext(ctx, ffprobePath, args...).Output()
 	if err != nil {
@@ -41,6 +45,7 @@ func Probe(ctx context.Context, ffprobePath, input string) (media.ProbeInfo, err
 			Height        int    `json:"height"`
 			PixFmt        string `json:"pix_fmt"`
 			ColorTransfer string `json:"color_transfer"`
+			Channels      int    `json:"channels"`
 		} `json:"streams"`
 	}
 	if err := json.Unmarshal(out, &result); err != nil {
@@ -61,6 +66,14 @@ func Probe(ctx context.Context, ffprobePath, input string) (media.ProbeInfo, err
 			info.VideoHeight = s.Height
 			info.VideoBitDepth = pixFmtBitDepth(s.PixFmt)
 			info.VideoHDR = isHDRTransfer(s.ColorTransfer)
+		case "audio":
+			// Keep the first audio track (the default the pull maps as 0:a:0),
+			// ignoring later alternates/commentary.
+			if info.AudioCodec != "" {
+				continue
+			}
+			info.AudioCodec = media.Codec(s.CodecName)
+			info.AudioChannels = s.Channels
 		}
 	}
 	return info, nil

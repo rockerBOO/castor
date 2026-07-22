@@ -1,4 +1,4 @@
-package cast
+package dlna
 
 import (
 	"context"
@@ -38,14 +38,14 @@ type subtitles struct {
 	cuePath string
 }
 
-// newSubtitles prepares the transcription stage when the plan asks for
-// hardsubs. Whisper init failure downgrades to a subtitle-less cast (nil)
-// rather than blocking playback.
-func newSubtitles(ctx context.Context, cfg Config, plan Plan, workDir string) *subtitles {
-	if plan.SubtitleDelivery != SubtitleHardsub {
+// newSubtitles prepares the transcription stage when whisper is enabled,
+// returning nil otherwise (a subtitle-less cast). Whisper init failure also
+// downgrades to nil rather than blocking playback.
+func newSubtitles(ctx context.Context, whisperCfg whisper.Config, workDir string) *subtitles {
+	if !whisperCfg.Enable {
 		return nil
 	}
-	tr, err := whisper.New(ctx, cfg.Whisper)
+	tr, err := whisper.New(ctx, whisperCfg)
 	if err != nil {
 		slog.WarnContext(ctx, "whisper init failed; casting without subtitles", "error", err)
 		return nil

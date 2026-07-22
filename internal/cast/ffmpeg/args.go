@@ -77,8 +77,10 @@ type EncodeOptions struct {
 	// AudioSampleRate target when re-encoding (Hz). 0 keeps the source rate.
 	AudioSampleRate int
 
-	// AudioChannels target when re-encoding. 0 keeps the source layout.
-	// Set to 2 for DLNA so Samsung firmwares accept the stream.
+	// AudioChannels target when re-encoding. 0 keeps the source layout. The
+	// planner's audio resolver sets this: 2 to downmix to stereo (the floor every
+	// renderer decodes), or the source layout capped at the codec's ceiling to
+	// keep 5.1/7.1. Ignored for copy.
 	AudioChannels int
 
 	// SubtitleTextFile, when non-empty, burns the file's current contents
@@ -165,6 +167,15 @@ func EncodeArgs(opts EncodeOptions) []string {
 		args = append(args, containerInputArgs(opts.SourceContentType)...)
 		args = append(args, "-i", opts.SourceURL.String())
 	}
+
+	// Map the first video and first audio track explicitly. ffmpeg's default
+	// stream selection picks the audio track with the most channels, which on a
+	// multi-track source can differ from the first track the planner probed to
+	// choose copy-vs-encode — so the encode would apply that decision to the
+	// wrong track. Pinning 0:a:0 keeps the encoded track identical to the probed
+	// one. (The DLNA spool is already single-audio via the puller's -map, so this
+	// only changes behaviour for the direct network remux.)
+	args = append(args, "-map", "0:v:0", "-map", "0:a:0")
 
 	// Video filter chain. scale= runs first so text is rendered at the final
 	// resolution (crisper than scaling rendered text); it caps height while

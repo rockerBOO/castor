@@ -1,37 +1,23 @@
 package cast
 
 import (
-	"time"
-
+	"github.com/stupside/castor/internal/cast/core"
 	"github.com/stupside/castor/internal/cast/whisper"
-	"github.com/stupside/castor/internal/device"
-	"github.com/stupside/castor/internal/source/resolve"
 )
 
-// Config is everything Play needs. The application config composes these
-// types; cast never reads app-level state.
+// Config is the application-facing cast configuration: the device-neutral
+// core.Config (embedded, so cfg.Device etc. read through and cfg.Config is the
+// exact value the shared machinery wants) plus Whisper, a DLNA-only subtitle
+// knob kept out of core so the shared core imports no device subsystem.
 type Config struct {
-	Device    DeviceConfig
-	Network   NetworkConfig
-	Transcode TranscodeConfig
-	Whisper   whisper.Config
-	Resolver  resolve.Config
+	core.Config
+	Whisper whisper.Config
 }
 
-type DeviceConfig struct {
-	Name string      `yaml:"name" validate:"required"`
-	Type device.Type `yaml:"type" validate:"required"`
-}
-
-type NetworkConfig struct {
-	Timeout   time.Duration `yaml:"timeout" validate:"required"`
-	Interface string        `yaml:"interface"`
-}
-
-// TranscodeConfig holds the small set of ffmpeg settings that aren't decided
-// by the planner. Codec/bitrate/format choices live in the per-device plan;
-// only the binary path and the upstream I/O timeout come from config.
-type TranscodeConfig struct {
-	FFmpegPath string        `yaml:"ffmpeg_path" validate:"required"`
-	RWTimeout  time.Duration `yaml:"rw_timeout" validate:"required"`
-}
+// The neutral config parts are re-exported so the application still writes
+// cast.DeviceConfig etc.; their definitions live in core.
+type (
+	DeviceConfig    = core.DeviceConfig
+	NetworkConfig   = core.NetworkConfig
+	TranscodeConfig = core.TranscodeConfig
+)
