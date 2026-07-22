@@ -113,6 +113,8 @@ func allocatorOpts(cfg BrowserConfig, profile *Profile) []chromedp.ExecAllocator
 		chromedp.Flag("disable-blink-features", "AutomationControlled"),
 		chromedp.Flag("disable-infobars", true),
 		chromedp.Flag("enable-features", "NetworkService,NetworkServiceInProcess"),
+		chromedp.Flag("disable-features", "IsolateOrigins,site-per-process"),
+		chromedp.Flag("disable-site-isolation-trials", true),
 		chromedp.Flag("disable-background-timer-throttling", true),
 		chromedp.Flag("disable-backgrounding-occluded-windows", true),
 		chromedp.Flag("disable-renderer-backgrounding", true),
