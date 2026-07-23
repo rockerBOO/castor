@@ -27,7 +27,7 @@ import (
 
 	wcpp "github.com/ggerganov/whisper.cpp/bindings/go/pkg/whisper"
 
-	"github.com/stupside/castor/internal/cast/cue"
+	"github.com/stupside/castor/internal/cast/subtitle/cue"
 )
 
 const (

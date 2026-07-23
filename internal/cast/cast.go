@@ -2,18 +2,19 @@
 //
 // It is device-agnostic: Play resolves the source, then hands off to a
 // per-device Strategy chosen by device type. Each strategy is a self-contained
-// module (internal/cast/dlna, internal/cast/chromecast) built on the shared
-// internal/cast/core; the strategies never import each other or this package, so
-// a device concern cannot leak across the boundary or into the core.
+// module (internal/cast/renderer/dlna, internal/cast/renderer/chromecast) built
+// on the shared internal/cast/core and the neutral building blocks under
+// deliver/ and subtitle/; the strategies never import each other or this
+// package, so a device concern cannot leak across the boundary or into the core.
 package cast
 
 import (
 	"context"
 	"fmt"
 
-	"github.com/stupside/castor/internal/cast/chromecast"
 	"github.com/stupside/castor/internal/cast/core"
-	"github.com/stupside/castor/internal/cast/dlna"
+	"github.com/stupside/castor/internal/cast/renderer/chromecast"
+	"github.com/stupside/castor/internal/cast/renderer/dlna"
 	"github.com/stupside/castor/internal/device"
 	"github.com/stupside/castor/internal/media"
 )

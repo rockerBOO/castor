@@ -27,7 +27,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/stupside/castor/internal/cast/spool"
+	"github.com/stupside/castor/internal/cast/deliver/spool"
 )
 
 const (

@@ -7,8 +7,8 @@ import (
 	"log/slog"
 	"path/filepath"
 
+	"github.com/stupside/castor/internal/cast/deliver/replay"
 	"github.com/stupside/castor/internal/cast/ffmpeg"
-	"github.com/stupside/castor/internal/cast/replay"
 	"github.com/stupside/castor/internal/device"
 	"github.com/stupside/castor/internal/media"
 )

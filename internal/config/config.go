@@ -1,7 +1,7 @@
 // Package config assembles the application configuration. It sits at the
 // edge of the dependency graph: every section's type is owned by the package
-// that consumes it (cast, extractor, resolve, whisper) and composed here, so
-// domain packages never import application-level state.
+// that consumes it (cast, extractor, resolve) and composed here, so domain
+// packages never import application-level state.
 package config
 
 import (
@@ -10,7 +10,6 @@ import (
 
 	"github.com/stupside/castor/internal/cast"
 	"github.com/stupside/castor/internal/cast/core"
-	"github.com/stupside/castor/internal/cast/whisper"
 	"github.com/stupside/castor/internal/source/extract"
 	"github.com/stupside/castor/internal/source/resolve"
 )
@@ -24,7 +23,7 @@ type Config struct {
 	Sources   []Source              `yaml:"sources" validate:"dive"`
 	Resolver  resolve.Config        `yaml:"resolver" validate:"required"`
 	Transcode cast.TranscodeConfig  `yaml:"transcode" validate:"required"`
-	Whisper   whisper.Config        `yaml:"whisper"`
+	Whisper   cast.WhisperConfig    `yaml:"whisper"`
 	TMDB      TMDB                  `yaml:"tmdb"`
 }
 

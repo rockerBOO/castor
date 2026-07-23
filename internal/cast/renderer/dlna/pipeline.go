@@ -10,9 +10,9 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/stupside/castor/internal/cast/core"
+	"github.com/stupside/castor/internal/cast/deliver/spool"
 	"github.com/stupside/castor/internal/cast/ffmpeg"
-	"github.com/stupside/castor/internal/cast/spool"
-	"github.com/stupside/castor/internal/cast/whisper"
+	"github.com/stupside/castor/internal/cast/subtitle/whisper"
 	"github.com/stupside/castor/internal/device"
 	"github.com/stupside/castor/internal/media"
 )

@@ -15,7 +15,6 @@ import (
 	"github.com/knadh/koanf/v2"
 
 	"github.com/stupside/castor/internal/cast"
-	"github.com/stupside/castor/internal/cast/whisper"
 	"github.com/stupside/castor/internal/source/extract"
 	"github.com/stupside/castor/internal/source/resolve"
 )
@@ -53,7 +52,7 @@ func defaults() *Config {
 		Transcode: cast.TranscodeConfig{FFmpegPath: "ffmpeg", RWTimeout: 30 * time.Second},
 		// Pinned rather than "auto": the streaming transcriber re-detects on
 		// every buffer with auto, which misfires on music and quiet stretches.
-		Whisper: whisper.Config{Language: "en"},
+		Whisper: cast.WhisperConfig{Language: "en"},
 	}
 }
 

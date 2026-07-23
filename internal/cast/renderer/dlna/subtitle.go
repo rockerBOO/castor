@@ -10,9 +10,9 @@ import (
 
 	"golang.org/x/sync/errgroup"
 
-	"github.com/stupside/castor/internal/cast/cue"
 	"github.com/stupside/castor/internal/cast/ffmpeg"
-	"github.com/stupside/castor/internal/cast/whisper"
+	"github.com/stupside/castor/internal/cast/subtitle/cue"
+	"github.com/stupside/castor/internal/cast/subtitle/whisper"
 )
 
 const (

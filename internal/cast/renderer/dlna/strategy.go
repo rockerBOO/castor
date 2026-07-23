@@ -10,7 +10,7 @@ import (
 	"log/slog"
 
 	"github.com/stupside/castor/internal/cast/core"
-	"github.com/stupside/castor/internal/cast/whisper"
+	"github.com/stupside/castor/internal/cast/subtitle/whisper"
 	"github.com/stupside/castor/internal/media"
 )
 

@@ -6,9 +6,9 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/stupside/castor/internal/cast/deliver/spool"
 	"github.com/stupside/castor/internal/cast/ffmpeg"
-	"github.com/stupside/castor/internal/cast/spool"
-	"github.com/stupside/castor/internal/cast/whisper"
+	"github.com/stupside/castor/internal/cast/subtitle/whisper"
 )
 
 const (
