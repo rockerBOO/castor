@@ -17,7 +17,7 @@ func h264() ProbeInfo {
 // renderer that advertises H.264, so the matching rules can be exercised here
 // without importing the device package.
 var samsungLike = Renderer{
-	Containers: []string{"video/mp2t", MP4},
+	Containers: []string{MPEGTS, MP4},
 	Video: []VideoSupport{
 		{Codec: CodecH264, Profiles: []string{"Constrained Baseline", "Baseline", "Main", "High"}},
 	},

@@ -156,8 +156,8 @@ func TestRunServeSpool(t *testing.T) {
 }
 
 // mpegtsContentType is what the DLNA-style served path tells the device it is
-// fetching; there is no exported media constant for it.
-const mpegtsContentType = "video/mp2t"
+// fetching.
+const mpegtsContentType = media.MPEGTS
 
 // runServed drives Run for a served plan under a bounded context (a wedged
 // ffmpeg fails the test instead of hanging the suite) and fails on any error.

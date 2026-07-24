@@ -10,12 +10,13 @@ import (
 )
 
 const (
-	MP4  = "video/mp4"
-	MKV  = "video/x-matroska"
-	WebM = "video/webm"
-	AVI  = "video/x-msvideo"
-	MOV  = "video/quicktime"
-	HLS  = "application/x-mpegURL"
+	MP4    = "video/mp4"
+	MKV    = "video/x-matroska"
+	WebM   = "video/webm"
+	AVI    = "video/x-msvideo"
+	MOV    = "video/quicktime"
+	HLS    = "application/x-mpegURL"
+	MPEGTS = "video/mp2t"
 )
 
 // HLSInputArgs contains ffmpeg/ffprobe flags that relax extension checks
@@ -65,7 +66,7 @@ type FormatInfo struct {
 }
 
 var formatRegistry = map[string]FormatInfo{
-	"mpegts": {ContentType: "video/mp2t", Extension: ".ts"},
+	"mpegts": {ContentType: MPEGTS, Extension: ".ts"},
 	"mp4":    {ContentType: MP4, Extension: ".mp4"},
 }
 

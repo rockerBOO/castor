@@ -9,10 +9,8 @@ import (
 )
 
 // mpegtsContentType is what a served cast that is not the self-fetch mp4 remux
-// tells the device it is fetching. There is no exported media constant for it
-// (it lives in the format registry, keyed by muxer name), so the plan and this
-// test both spell the literal, which is exactly the coupling worth pinning.
-const mpegtsContentType = "video/mp2t"
+// tells the device it is fetching.
+const mpegtsContentType = media.MPEGTS
 
 // TestNewPlan pins the pure plan decision that replaced the two per-device
 // strategies: given the renderer's advertised capabilities (SelfFetch + accepted

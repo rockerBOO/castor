@@ -12,7 +12,24 @@ package subtitle
 // transcription and VAD models auto-download to the user cache, and the streaming
 // pipeline needs no tuning.
 type Whisper struct {
-	Enable    bool   `yaml:"enable"`
-	ModelPath string `yaml:"model_path"` // override the auto-downloaded tiny.en model
-	Language  string `yaml:"language"`   // BCP-47; pin it (per-buffer auto-detection is unstable)
+	Enable    bool     `yaml:"enable"`
+	ModelPath string   `yaml:"model_path"` // override the auto-downloaded tiny.en model
+	Language  Language `yaml:"language"`   // pin a BCP-47 code, or LanguageAuto to detect
+}
+
+// Language is a subtitle language: a BCP-47 code (e.g. "en", "fr") the transcriber
+// is pinned to, or LanguageAuto to detect it from the audio. It is a named type so
+// the "detect it" sentinel is expressed once, via AutoDetect, instead of scattered
+// as bare "" and "auto" string comparisons at each call site.
+type Language string
+
+// LanguageAuto lets the transcriber detect the language per buffer. An unset
+// (zero-value) Language means the same, so both resolve to auto-detection.
+const LanguageAuto Language = "auto"
+
+// AutoDetect reports whether the language should be detected from the audio rather
+// than pinned. Pinning is preferred where a code is known: per-buffer detection
+// misfires on music and quiet stretches.
+func (l Language) AutoDetect() bool {
+	return l == "" || l == LanguageAuto
 }

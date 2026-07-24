@@ -179,8 +179,8 @@ func TestParseSinkProtocolInfo(t *testing.T) {
 	if caps.SupportsCodec(media.CodecHEVC) {
 		t.Error("AVC-only sink must not advertise HEVC")
 	}
-	if !slices.Contains(caps.Containers, "video/mp2t") {
-		t.Errorf("expected video/mp2t container, got %v", caps.Containers)
+	if !slices.Contains(caps.Containers, media.MPEGTS) {
+		t.Errorf("expected %q container, got %v", media.MPEGTS, caps.Containers)
 	}
 
 	// The H.264 envelope copies a codec-safe stream, not a 10-bit one.

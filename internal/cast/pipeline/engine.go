@@ -248,7 +248,7 @@ func runSpooled(parentCtx context.Context, cfg core.Config, connect ConnectFunc,
 	// threaded so a wedged encoder test-probe unwinds with the cast.
 	core.ResolveVideo(ctx, &opts, caps, srcInfo, cfg)
 
-	videoCodec := "copy"
+	videoCodec := ffmpeg.CodecCopy
 	if opts.VideoEncoder != nil {
 		videoCodec = opts.VideoEncoder.Name
 	}

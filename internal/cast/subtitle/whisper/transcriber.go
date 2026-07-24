@@ -224,10 +224,10 @@ func (t *Transcriber) transcribeBuffer(ctx context.Context, model wcpp.Model, sa
 		return nil, fmt.Errorf("new whisper context: %w", err)
 	}
 
-	// Pin the language when configured; per-buffer auto-detection misfires
+	// Pin the language when one is configured; per-buffer auto-detection misfires
 	// on music and quiet stretches. English-only models need no pinning.
-	if t.cfg.Language != "" && t.cfg.Language != "auto" && wctx.IsMultilingual() {
-		if err := wctx.SetLanguage(t.cfg.Language); err != nil {
+	if !t.cfg.Language.AutoDetect() && wctx.IsMultilingual() {
+		if err := wctx.SetLanguage(string(t.cfg.Language)); err != nil {
 			slog.WarnContext(ctx, "whisper SetLanguage failed", "language", t.cfg.Language, "error", err)
 		}
 	}

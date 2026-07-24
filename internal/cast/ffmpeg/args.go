@@ -10,6 +10,12 @@ import (
 	"github.com/stupside/castor/internal/media"
 )
 
+// CodecCopy is the ffmpeg "-c copy" keyword: stream-copy a track instead of
+// re-encoding it. It is the one non-encoder value AudioCodec takes (VideoEncoder
+// uses a nil pointer for the same intent), named so callers set and test it
+// without repeating the bare "copy" literal.
+const CodecCopy = "copy"
+
 // EncodeOptions is the full description of an encode invocation. Every choice
 // is explicit; nothing is inferred from globals or context. The planner
 // upstream is responsible for filling these in based on device capabilities
@@ -68,7 +74,7 @@ type EncodeOptions struct {
 	// nil (copy): a copied bitstream keeps the source's keyframes.
 	KeyframeIntervalSec int
 
-	// AudioCodec is "copy" or an encoder name like "aac".
+	// AudioCodec is CodecCopy or an encoder name like "aac".
 	AudioCodec string
 
 	// AudioBitrate target when re-encoding (e.g. "256k"). Ignored for copy.
@@ -198,7 +204,7 @@ func EncodeArgs(opts EncodeOptions) []string {
 	}
 
 	if enc == nil {
-		args = append(args, "-c:v", "copy")
+		args = append(args, "-c:v", CodecCopy)
 	} else {
 		args = append(args, "-c:v", enc.Name)
 		args = append(args, enc.Flags...)
@@ -224,7 +230,7 @@ func EncodeArgs(opts EncodeOptions) []string {
 	}
 
 	args = append(args, "-c:a", opts.AudioCodec)
-	if opts.AudioCodec != "copy" {
+	if opts.AudioCodec != CodecCopy {
 		if opts.AudioSampleRate > 0 {
 			args = append(args, "-ar", strconv.Itoa(opts.AudioSampleRate))
 		}
@@ -348,7 +354,7 @@ func PullArgs(opts PullOptions) []string {
 	// hardcoding the h264 one breaks HEVC sources.
 	args = append(args,
 		"-map", "0:v:0", "-map", "0:a:0",
-		"-c", "copy",
+		"-c", CodecCopy,
 		"-f", "mpegts", "pipe:1",
 	)
 

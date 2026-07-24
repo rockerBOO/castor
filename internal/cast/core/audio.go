@@ -56,7 +56,7 @@ var audioCodecPreference = []media.Codec{media.CodecEAC3, media.CodecAC3}
 //     ProbeInfo, gets — the pre-surround behaviour).
 func ResolveAudio(opts *ffmpeg.EncodeOptions, caps media.Renderer, src media.ProbeInfo) {
 	if caps.CanCopyAudio(src) {
-		opts.AudioCodec = "copy"
+		opts.AudioCodec = ffmpeg.CodecCopy
 		return
 	}
 	if src.AudioChannels > 2 {

@@ -201,7 +201,7 @@ var (
 func fallbackCaps() media.Renderer {
 	return media.Renderer{
 		SelfFetch:  false,
-		Containers: []string{"video/mp2t"},
+		Containers: []string{media.MPEGTS},
 		Video:      []media.VideoSupport{videoSupportFor(media.CodecH264)},
 	}
 }
@@ -250,7 +250,7 @@ func parseSinkProtocolInfo(sink string) media.Renderer {
 			r.Audio = append(r.Audio, audioSupportFor(c))
 		}
 	}
-	for _, ct := range []string{"video/mp2t", media.MP4} {
+	for _, ct := range []string{media.MPEGTS, media.MP4} {
 		if containers[ct] {
 			r.Containers = append(r.Containers, ct)
 		}
@@ -290,8 +290,8 @@ func audioFromProfile(mime, pn string) (media.Codec, bool) {
 // content types the pipeline speaks.
 func containerFromMIME(mime string) (string, bool) {
 	switch mime {
-	case "video/mp2t", "video/mpeg", "video/vnd.dlna.mpeg-tts", "video/x-mpegts":
-		return "video/mp2t", true
+	case media.MPEGTS, "video/mpeg", "video/vnd.dlna.mpeg-tts", "video/x-mpegts":
+		return media.MPEGTS, true
 	case media.MP4:
 		return media.MP4, true
 	}
@@ -373,7 +373,7 @@ const (
 // profile is for 192-byte timestamped packets and Samsung rejects the mismatch.
 func dlnaProfileFor(contentType string) (name, flags string) {
 	switch contentType {
-	case "video/mp2t":
+	case media.MPEGTS:
 		return "MPEG_TS_HD_NA_ISO", dlnaFlagsLive
 	case "video/mp4":
 		return "AVC_MP4_HP_HD_AAC", dlnaFlagsFile

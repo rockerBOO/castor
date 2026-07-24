@@ -86,5 +86,5 @@ func outputContentType(delivery DeliveryMode, caps media.Renderer) string {
 	if delivery == DeliverServe && caps.SelfFetch {
 		return media.MP4
 	}
-	return "video/mp2t"
+	return media.MPEGTS
 }
