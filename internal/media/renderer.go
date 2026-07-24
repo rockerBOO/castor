@@ -13,6 +13,14 @@ type Renderer struct {
 	Containers []string
 	Video      []VideoSupport
 	Audio      []AudioSupport
+
+	// SelfFetch reports whether the renderer fetches an arbitrary stream URL
+	// itself once it is handed one, versus needing castor to serve the bytes to
+	// it. The planner reads this to choose pass-through (hand the device the
+	// source URL and let it pull directly) over a castor-served stream:
+	// Chromecast self-fetches, whereas DLNA only plays what we push to it via
+	// SetAVTransportURI and so is always served locally.
+	SelfFetch bool
 }
 
 // VideoSupport is one video envelope a renderer decodes natively. A probed

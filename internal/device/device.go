@@ -23,6 +23,18 @@ const (
 	TypeChromecast Type = "chromecast"
 )
 
+// SelfFetches reports whether a renderer of this type fetches media URLs itself
+// (a smart client such as Chromecast) versus only playing bytes castor serves to
+// it (DLNA). It is a static property of the protocol, known before the network
+// round-trip of discovery and connect, so the cast pipeline can decide up front
+// that a non-self-fetching renderer will always serve a local spool and begin
+// buffering the single-use source while connect runs concurrently. It MUST agree
+// with the connected renderer's Capabilities().SelfFetch, which the copy-vs-encode
+// stage reads once the device is in hand.
+func SelfFetches(t Type) bool {
+	return t == TypeChromecast
+}
+
 type Info struct {
 	Name    string
 	Type    Type

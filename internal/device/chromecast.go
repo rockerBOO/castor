@@ -117,7 +117,9 @@ func (c *chromecastDevice) Close() error {
 
 // chromecastCapabilities: Chromecast decides pass-through purely on the
 // container (it never re-encodes video, so it carries no video envelope),
-// accepting these MIME types directly. The audio envelope drives the remux
+// accepting these MIME types directly. SelfFetch is true: handed a URL, Cast
+// pulls it over the network itself, so an accepted container casts straight
+// through with no castor-served stream. The audio envelope drives the remux
 // path only (a non-accepted container remuxed to mp4): Cast decodes AAC, AC-3,
 // and E-AC-3, so a 5.1 track in an MKV is stream-copied intact instead of
 // downmixed. There is no runtime query as there is for DLNA, so this is the
@@ -125,6 +127,7 @@ func (c *chromecastDevice) Close() error {
 // multichannel AAC only up to 5.1, so a 7.1 AAC track is re-encoded (to a Dolby
 // codec, else stereo) rather than copied to a receiver that can't play it.
 var chromecastCapabilities = media.Renderer{
+	SelfFetch:  true,
 	Containers: []string{media.HLS, media.MP4, media.MKV, media.WebM},
 	Audio: []media.AudioSupport{
 		{Codec: media.CodecAAC, MaxChannels: 6},
