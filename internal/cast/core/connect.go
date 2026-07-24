@@ -29,9 +29,12 @@ func ResolveSource(ctx context.Context, cfg Config, stream *media.Stream) (*medi
 	return resolved, localIP, nil
 }
 
-// Connect discovers and connects the renderer named in cfg. Each strategy calls
-// it at its own timing: DLNA from inside its errgroup so discovery overlaps the
-// pull, Chromecast up front because it needs the renderer's capabilities to plan.
+// Connect discovers and connects the renderer named in cfg. cast.Play calls it
+// once, up front: the plan needs the renderer's advertised capabilities
+// (SelfFetch, accepted containers, decodable codecs) to fix its axes before any
+// stage runs, so discovery can no longer overlap the pull the way the old DLNA
+// strategy arranged. device.Connect dispatches on device type internally, which
+// is why nothing above here carries a device-type switch.
 func Connect(ctx context.Context, cfg Config) (device.Device, error) {
 	slog.InfoContext(ctx, "discovering device", "name", cfg.Device.Name, "type", string(cfg.Device.Type))
 	info, err := device.FindInfo(ctx, cfg.Network.Timeout, cfg.Device.Type, cfg.Device.Name)

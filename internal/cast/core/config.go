@@ -1,28 +1,35 @@
-// Package core holds the device-agnostic machinery every cast strategy shares:
-// config, source resolution, device discovery/connect, the audio copy-vs-encode
-// decision, and the replay-server delivery. It knows nothing about DLNA or
-// Chromecast; the strategy packages import core, never the other way round, and
-// never each other, so a device concern physically cannot leak across the
-// boundary or into this core.
+// Package core holds the device-agnostic decision layer and the machinery every
+// cast shares: config, source resolution, device discovery/connect, the pure
+// Plan (delivery/subtitle/output axes) with its copy-vs-encode resolvers, and the
+// replay-server delivery. It knows nothing about DLNA or Chromecast; the pipeline
+// executor and the device adapters import core, never the other way round, so a
+// device concern physically cannot leak across the boundary or into this core.
 package core
 
 import (
 	"time"
 
+	"github.com/stupside/castor/internal/cast/subtitle"
 	"github.com/stupside/castor/internal/device"
 	"github.com/stupside/castor/internal/source/resolve"
 )
 
-// Config is the device-neutral configuration every strategy shares: the target
-// device, network, transcode binary, and source resolver. Device-specific knobs
-// (e.g. DLNA's whisper subtitles) live in that strategy's own package, so core
-// imports no device subsystem. The application config composes this with those;
-// core never reads app-level state.
+// Config is the device-neutral configuration the planner and every stage share:
+// the target device, network, transcode binary, source resolver, and the
+// subtitle transcriber. It composes only domain types, so core imports no
+// application state; the app config assembles this and hands it in.
 type Config struct {
 	Device    DeviceConfig
 	Network   NetworkConfig
 	Transcode TranscodeConfig
 	Resolver  resolve.Config
+
+	// Whisper is the subtitle-transcription knob NewPlan reads to choose the
+	// subtitle axis (Enable gates burn-in). Its type lives in the cgo-free
+	// subtitle package, not the whisper transcriber, so this decision core carries
+	// it without importing whisper's cgo. A device that never serves (or a disabled
+	// transcriber) simply resolves to SubtitleOff.
+	Whisper subtitle.Whisper
 }
 
 type DeviceConfig struct {
@@ -35,9 +42,10 @@ type NetworkConfig struct {
 	Interface string        `yaml:"interface"`
 }
 
-// TranscodeConfig holds the small set of ffmpeg settings that aren't decided
-// by a strategy. Codec/bitrate/format choices live in the per-device strategy;
-// only the binary path and the upstream I/O timeout come from config.
+// TranscodeConfig holds the small set of ffmpeg settings that aren't decided by
+// the plan. Codec/bitrate/format choices are resolved from capabilities (see the
+// Resolve* functions); only the binary path and the upstream I/O timeout, which
+// no capability can determine, come from config.
 type TranscodeConfig struct {
 	FFmpegPath string        `yaml:"ffmpeg_path" validate:"required"`
 	RWTimeout  time.Duration `yaml:"rw_timeout" validate:"required"`

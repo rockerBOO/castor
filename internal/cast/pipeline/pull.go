@@ -1,4 +1,4 @@
-package dlna
+package pipeline
 
 import (
 	"cmp"
@@ -36,7 +36,9 @@ type pull struct {
 }
 
 // startPull launches the upstream ffmpeg. Its mpegts output lands in sp; the
-// optional PCM output is exposed as pull.pcm.
+// optional PCM output is exposed as pull.pcm. It is device-blind: the served
+// path spools every source this way regardless of renderer family, and only the
+// wantPCM flag (driven by the plan's subtitle mode) changes what it produces.
 func startPull(ctx context.Context, cfg core.TranscodeConfig, resolved *media.Stream, sp *spool.Spool, wantPCM bool) (*pull, error) {
 	args := ffmpeg.PullArgs(ffmpeg.PullOptions{
 		SourceURL:         resolved.URL,

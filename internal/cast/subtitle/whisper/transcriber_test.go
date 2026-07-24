@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stupside/castor/internal/cast/subtitle"
 	"github.com/stupside/castor/internal/cast/subtitle/cue"
 )
 
@@ -109,7 +110,7 @@ func TestStreamingSmoke(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	tr, err := New(ctx, Config{})
+	tr, err := New(ctx, subtitle.Whisper{})
 	if err != nil {
 		t.Fatal(err)
 	}

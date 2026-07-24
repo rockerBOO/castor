@@ -2,18 +2,17 @@ package cast
 
 import (
 	"github.com/stupside/castor/internal/cast/core"
-	"github.com/stupside/castor/internal/cast/subtitle/whisper"
+	"github.com/stupside/castor/internal/cast/subtitle"
 )
 
-// Config is the application-facing cast configuration: the device-neutral
-// core.Config (embedded, so cfg.Device etc. read through and cfg.Config is the
-// exact value the shared machinery wants) plus Whisper, the subtitle-transcription
-// knob. Whisper is kept off core.Config so the neutral core config carries only
-// what the shared machinery reads; it is threaded to whichever renderer does
-// subtitle work.
+// Config is the application-facing cast configuration. It is just core.Config
+// embedded, so cfg.Device etc. read through and cfg.Config is the exact value
+// the shared machinery wants. The subtitle-transcription knob (Whisper) now
+// lives on core.Config itself, because the pure planner reads it to choose the
+// subtitle axis and must reach it with no import of any renderer; there is no
+// separate Whisper field here to shadow it.
 type Config struct {
 	core.Config
-	Whisper whisper.Config
 }
 
 // Every config section's type is re-exported here so the application composes
@@ -24,5 +23,5 @@ type (
 	DeviceConfig    = core.DeviceConfig
 	NetworkConfig   = core.NetworkConfig
 	TranscodeConfig = core.TranscodeConfig
-	WhisperConfig   = whisper.Config
+	WhisperConfig   = subtitle.Whisper
 )

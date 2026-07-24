@@ -5,11 +5,11 @@ import (
 	"github.com/stupside/castor/internal/media"
 )
 
-// Audio delivery is device-neutral: both the DLNA spool path and the Chromecast
-// remux path re-encode audio only when they must, and both decide it the same
-// way, from a probe of the source plus the renderer's advertised audio support.
-// The bitrate targets here are just good audio points, not tied to any device
-// (unlike a strategy's video targets, which are that renderer's decode budget).
+// Audio delivery is device-neutral: both the spool path and the network remux
+// path re-encode audio only when they must, and both decide it the same way,
+// from a probe of the source plus the renderer's advertised audio support. The
+// bitrate targets here are just good audio points, not tied to any device
+// (unlike ResolveVideo's targets, which are the renderer's decode budget).
 
 // audioTarget is a surround re-encode target: the bitrate and the channel
 // ceiling the codec carries, so a source above it (a 7.1 track targeting AC-3)

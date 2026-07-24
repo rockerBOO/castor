@@ -27,6 +27,7 @@ import (
 
 	wcpp "github.com/ggerganov/whisper.cpp/bindings/go/pkg/whisper"
 
+	"github.com/stupside/castor/internal/cast/subtitle"
 	"github.com/stupside/castor/internal/cast/subtitle/cue"
 )
 
@@ -62,7 +63,7 @@ type word = cue.Word
 // Transcriber owns a whisper model and streams committed words to a sink. It
 // is not reusable; call New for each cast.
 type Transcriber struct {
-	cfg          Config
+	cfg          subtitle.Whisper
 	modelPath    string
 	vadModelPath string
 
@@ -73,7 +74,7 @@ type Transcriber struct {
 
 // New returns a configured Transcriber, resolving the transcription and VAD
 // model paths (auto-downloading the defaults into the user cache when unset).
-func New(ctx context.Context, cfg Config) (*Transcriber, error) {
+func New(ctx context.Context, cfg subtitle.Whisper) (*Transcriber, error) {
 	modelPath, err := ensureModel(ctx, cfg.ModelPath)
 	if err != nil {
 		return nil, err

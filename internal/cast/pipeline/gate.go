@@ -1,4 +1,4 @@
-package dlna
+package pipeline
 
 import (
 	"context"
@@ -112,7 +112,7 @@ func waitForPlayable(ctx context.Context, tr *whisper.Transcriber, sp *spool.Spo
 		select {
 		case <-ctx.Done():
 			// context.Cause surfaces the real reason when a concurrent step
-			// (e.g. device discovery) cancelled the group, not a bare
+			// (e.g. the transcriber) cancelled the group, not a bare
 			// "context canceled".
 			return context.Cause(ctx)
 		case <-tick.C:

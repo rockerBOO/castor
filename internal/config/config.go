@@ -41,8 +41,8 @@ func (c *Config) Cast() cast.Config {
 			Network:   c.Network,
 			Transcode: c.Transcode,
 			Resolver:  c.Resolver,
+			Whisper:   c.Whisper,
 		},
-		Whisper: c.Whisper,
 	}
 }
 
