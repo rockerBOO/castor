@@ -43,8 +43,8 @@ type Renderer struct {
 // the copy gate, not something guessed from the renderer.
 type VideoSupport struct {
 	Codec     Codec
-	Profiles  []string // nil = any profile
-	BitDepths []int    // nil = {8}
+	Profiles  []string // nil or empty = any profile
+	BitDepths []int    // nil or empty = {8}
 }
 
 // AudioSupport is one audio codec a renderer decodes natively, up to MaxChannels
@@ -110,7 +110,7 @@ func (s VideoSupport) accepts(v ProbeInfo) bool {
 		return false
 	}
 	depths := s.BitDepths
-	if depths == nil {
+	if len(depths) == 0 {
 		depths = []int{8}
 	}
 	if !slices.Contains(depths, v.VideoBitDepth) {

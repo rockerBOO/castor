@@ -60,6 +60,18 @@ func TestRendererCanCopyVideo(t *testing.T) {
 	}
 }
 
+// TestRendererCanCopyVideoEmptyBitDepths pins BitDepths' nil-and-empty-both-
+// default-to-8-bit convention against the asymmetric bug where a non-nil
+// empty slice (e.g. from a decoded JSON "[]") silently rejected every probe,
+// unlike Profiles, whose "nil or empty = any" convention already covered
+// both cases.
+func TestRendererCanCopyVideoEmptyBitDepths(t *testing.T) {
+	r := Renderer{Video: []VideoSupport{{Codec: CodecH264, BitDepths: []int{}}}}
+	if !r.CanCopyVideo(h264()) {
+		t.Error("a non-nil empty BitDepths should default to {8}, same as nil, and accept an 8-bit source")
+	}
+}
+
 func TestRendererAcceptsContainer(t *testing.T) {
 	r := Renderer{Containers: []string{HLS, MP4}}
 	if !r.AcceptsContainer(HLS) {
