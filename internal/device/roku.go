@@ -326,7 +326,7 @@ func streamFormatFor(contentType string) string {
 // copy-vs-encode gate reads one. The audio envelope lets a 5.1/7.1 AC-3/E-AC-3 or
 // AAC track pass the remux through intact instead of being downmixed to stereo.
 var rokuCapabilities = media.Renderer{
-	SelfFetch:       true,
+	SelfFetch:       roku{}.selfFetches(),
 	Containers:      []string{media.HLS, media.MP4, media.MKV},
 	ServedContainer: media.HLS,
 	Audio: []media.AudioSupport{

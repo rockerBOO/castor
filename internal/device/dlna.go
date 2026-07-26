@@ -307,7 +307,7 @@ var (
 // the one assumption we keep, and only as a floor.
 func fallbackCaps() media.Renderer {
 	return media.Renderer{
-		SelfFetch:  false,
+		SelfFetch:  dlna{}.selfFetches(),
 		Containers: []string{media.MPEGTS},
 		Video:      []media.VideoSupport{videoSupportFor(media.CodecH264)},
 	}
@@ -345,8 +345,10 @@ func parseSinkProtocolInfo(sink string) media.Renderer {
 
 	// A DLNA renderer only plays a resource we push to it via SetAVTransportURI;
 	// it never fetches an arbitrary source URL on its own, so SelfFetch stays
-	// false and the planner always serves the stream from castor.
-	r := media.Renderer{SelfFetch: false}
+	// false (derived from dlna.selfFetches(), the single source of truth for
+	// this family's static self-fetch bit) and the planner always serves the
+	// stream from castor.
+	r := media.Renderer{SelfFetch: dlna{}.selfFetches()}
 	for _, c := range discoverableCodecs {
 		if present[c] {
 			r.Video = append(r.Video, videoSupportFor(c))

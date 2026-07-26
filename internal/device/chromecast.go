@@ -148,7 +148,7 @@ func (c *chromecastDevice) Close() error {
 // multichannel AAC only up to 5.1, so a 7.1 AAC track is re-encoded (to a Dolby
 // codec, else stereo) rather than copied to a receiver that can't play it.
 var chromecastCapabilities = media.Renderer{
-	SelfFetch:       true,
+	SelfFetch:       chromecast{}.selfFetches(),
 	Containers:      []string{media.HLS, media.MP4, media.MKV, media.WebM},
 	ServedContainer: media.MP4,
 	Audio: []media.AudioSupport{

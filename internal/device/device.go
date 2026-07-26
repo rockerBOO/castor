@@ -32,7 +32,9 @@ const (
 // cast pipeline can decide up front that a non-self-fetching renderer will always
 // serve a local spool and begin buffering the single-use source while connect runs
 // concurrently. It MUST agree with the connected renderer's Capabilities().SelfFetch,
-// which the copy-vs-encode stage reads once the device is in hand.
+// which the copy-vs-encode stage reads once the device is in hand: each family's
+// media.Renderer literal sets SelfFetch by calling its own selfFetches() rather
+// than re-stating the bool, so the two can't drift independently.
 func SelfFetches(t Type) bool {
 	r, ok := rendererFor(t)
 	return ok && r.selfFetches()
