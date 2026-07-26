@@ -45,7 +45,13 @@ func (a *app) castInteractive(ctx context.Context, cmd *cli.Command) error {
 	if err != nil {
 		return fmt.Errorf("picking device: %w", err)
 	}
+	// The picker lists devices of every family, so the pick can differ from
+	// config.yaml's device.type; propagate all three fields, not just Name, or
+	// DeviceConfig.resolve() reconnects using the stale configured type/host
+	// instead of the device the user just selected.
 	cfg.Device.Name = devInfo.Name
+	cfg.Device.Type = devInfo.Type
+	cfg.Device.Host = devInfo.Address
 
 	if cfg.TMDB.APIKey == "" {
 		return fmt.Errorf("TMDB API key missing: set tmdb.api_key in config.yaml or CASTOR_TMDB__API_KEY env var")
