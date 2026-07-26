@@ -86,6 +86,24 @@ device:
   type: dlna
 ```
 
+### Can't discover the device? Pin it by address
+
+If `castor scan` finds nothing, point Castor straight at the device by IP and it skips discovery:
+
+```yaml
+device:
+  name: "Living Room TV"   # now just a label
+  type: dlna
+  host: 192.168.0.3        # the device's LAN IP
+```
+
+Discovery uses SSDP/mDNS **multicast**, which doesn't cross VLANs/subnets and is blocked on Android/Termux (you'll see `netlinkrib: permission denied`). A pinned `host` reaches the device by **unicast** instead, so it works across those networks and skips the discovery wait on every cast.
+
+- **DLNA** `host` is the device IP; Castor asks it for its description over a single unicast request. If your TV doesn't answer that, set `host` to its full description URL instead (e.g. `http://192.168.0.3:9197/dmr`).
+- **Chromecast / Roku** `host` is the device IP.
+
+> On Android/Termux, also leave `network.interface` empty (the default): pinning one needs the same blocked interface lookup.
+
 Now cast a page you are watching, or a stream URL you have:
 
 ```sh
