@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -25,6 +26,7 @@ const (
 	rokuDefaultAppID   = "dev"
 	rokuDefaultDevUser = "rokudev"
 	rokuHTTPTimeout    = 10 * time.Second
+	rokuECPPort        = "8060"
 )
 
 // RokuConfig carries what discovery can't: which channel to launch (AppID, the
@@ -87,6 +89,26 @@ func (roku) discover(ctx context.Context) []Info {
 		}
 	}
 	return devices
+}
+
+// locate pins a Roku by address, bypassing SSDP discovery. The address is the
+// device IP (or host:port, or a full URL); it is normalised to the ECP root URL
+// (http://<host>:8060) that connect parses. The owner-set friendly name is not
+// fetched here (that is a discovery-time nicety over /query/device-info); the label
+// defaults to the host.
+func (roku) locate(_ context.Context, name, address string) (Info, error) {
+	host := address
+	if u, err := url.Parse(address); err == nil && u.Host != "" {
+		host = u.Host
+	}
+	if _, _, err := net.SplitHostPort(host); err != nil {
+		host = net.JoinHostPort(host, rokuECPPort)
+	}
+	return Info{
+		Name:    cmp.Or(name, hostOnly(address)),
+		Type:    TypeRoku,
+		Address: (&url.URL{Scheme: "http", Host: host}).String(),
+	}, nil
 }
 
 func rokuInfo(location, name string) (Info, bool) {

@@ -7,6 +7,7 @@ package device
 import (
 	"context"
 	"fmt"
+	"net"
 	"net/url"
 	"slices"
 	"strings"
@@ -53,6 +54,13 @@ type Config struct {
 	Name string
 	Type Type
 
+	// Address, when set, pins where the renderer is so a cast connects to it
+	// directly and skips discovery. It is what the user configured: a bare host or
+	// host:port for any family, or a DLNA device description URL. Locate turns it
+	// into the concrete Info each family's connect needs. Empty means "find me by
+	// Name over discovery".
+	Address string
+
 	Family any
 }
 
@@ -93,6 +101,10 @@ type renderer interface {
 	// discover scans the local network for devices of this family until ctx expires,
 	// contributing no devices (rather than erroring) when the scan fails.
 	discover(ctx context.Context) []Info
+
+	// locate turns a pre-known address into a connectable Info, skipping discovery
+	// (see Locate). name defaults to the host when empty.
+	locate(ctx context.Context, name, address string) (Info, error)
 
 	// connect opens a session to the device at info. cfg carries the family's opaque
 	// connect settings (Config.Family), asserted and read only by this family.
@@ -143,6 +155,39 @@ func FindInfo(ctx context.Context, timeout time.Duration, dtype Type, name strin
 		}
 	}
 	return Info{}, fmt.Errorf("device %q (type %s) not found", name, dtype)
+}
+
+// Locate builds a connectable Info for a renderer whose address is known ahead of
+// time, dispatching to its family strategy so the cast skips discovery entirely.
+// This is the direct-connect path: it serves renderers reachable by unicast but not
+// by discovery, whose SSDP/mDNS is multicast and so crosses no VLAN and is refused
+// where interface enumeration is denied (Android/Termux, where discovery fails with
+// "route ip+net: netlinkrib: permission denied"); it also shortcuts the discovery
+// window for a device at a stable address.
+//
+// address is what the user pinned: a bare host or host:port for any family, or, for
+// DLNA, its device description URL. Each family turns that into the concrete Info
+// its connect needs; DLNA additionally resolves a bare host to a description URL
+// over a unicast SSDP request. name is carried through as the label and defaults to
+// the host, since a pinned device is not found by name.
+func Locate(ctx context.Context, dtype Type, name, address string) (Info, error) {
+	r, ok := rendererFor(dtype)
+	if !ok {
+		return Info{}, fmt.Errorf("unknown device type: %q", dtype)
+	}
+	return r.locate(ctx, name, address)
+}
+
+// hostOnly reduces a pinned address to its host, for use as a default label when
+// the config pins an address but names no device.
+func hostOnly(address string) string {
+	if u, err := url.Parse(address); err == nil && u.Host != "" {
+		address = u.Host
+	}
+	if host, _, err := net.SplitHostPort(address); err == nil {
+		return host
+	}
+	return address
 }
 
 // Discover scans the local network for renderers of every registered family in

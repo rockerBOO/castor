@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/url"
 	"strings"
 	"time"
@@ -18,6 +19,16 @@ import (
 // ConnectionManager degrades to conservative capabilities instead of stalling
 // the cast, since this negotiation now gates the copy-vs-encode decision.
 const capsTimeout = 3 * time.Second
+
+const (
+	// dlnaSearchTarget is the SSDP search target for UPnP MediaRenderers, shared by
+	// multicast discovery and the unicast M-SEARCH the direct-connect path uses.
+	dlnaSearchTarget = "urn:schemas-upnp-org:device:MediaRenderer:1"
+	// ssdpPort is the fixed UDP port an SSDP endpoint listens on.
+	ssdpPort = "1900"
+	// msearchTimeout bounds the unicast M-SEARCH when the caller sets no deadline.
+	msearchTimeout = 3 * time.Second
+)
 
 // serviceVersions are the UPnP service versions castor looks for, newest
 // first. Renderers publish whichever version their firmware implements (Philips
@@ -54,7 +65,7 @@ func (dlna) selfFetches() bool { return false }
 
 // discover browses SSDP for UPnP MediaRenderer devices until ctx expires.
 func (dlna) discover(ctx context.Context) []Info {
-	results, err := goupnp.DiscoverDevicesCtx(ctx, "urn:schemas-upnp-org:device:MediaRenderer:1")
+	results, err := goupnp.DiscoverDevicesCtx(ctx, dlnaSearchTarget)
 	if err != nil {
 		slog.WarnContext(ctx, "dlna discovery error", "error", err)
 		return nil
@@ -93,6 +104,91 @@ func dlnaInfo(result goupnp.MaybeRootDevice) (Info, bool) {
 		Type:    TypeDLNA,
 		Address: result.Location.String(),
 	}, true
+}
+
+// locate resolves a pinned DLNA target into an Info carrying the device description
+// URL connect needs. When address is already that URL (has an http scheme) it is
+// trusted verbatim; otherwise address is a bare host or host:port and a unicast SSDP
+// M-SEARCH asks the device for its description location. That M-SEARCH is a single
+// unicast datagram (see searchDLNADescription), so unlike goupnp's multicast
+// discovery it enumerates no interfaces and works where that is denied
+// (Android/Termux) or where multicast does not reach the device.
+func (dlna) locate(ctx context.Context, name, address string) (Info, error) {
+	if u, err := url.Parse(address); err == nil && (u.Scheme == "http" || u.Scheme == "https") && u.Host != "" {
+		return Info{Name: cmp.Or(name, u.Hostname()), Type: TypeDLNA, Address: address}, nil
+	}
+
+	location, err := searchDLNADescription(ctx, address)
+	if err != nil {
+		return Info{}, fmt.Errorf(
+			"resolving DLNA description for %q (device did not answer a unicast SSDP search; "+
+				"set device.host to its full description URL instead): %w", address, err)
+	}
+	return Info{Name: cmp.Or(name, hostOnly(address)), Type: TypeDLNA, Address: location}, nil
+}
+
+// searchDLNADescription sends a unicast SSDP M-SEARCH to host and returns the
+// LOCATION (the UPnP device description URL) from the first response that carries
+// one. host may include a port; the SSDP default (1900) is assumed otherwise. It
+// dials a connected UDP socket, which does route selection via connect(2) only and
+// enumerates no interfaces, so it avoids the netlink call that fails on Termux.
+func searchDLNADescription(ctx context.Context, host string) (string, error) {
+	target := host
+	if _, _, err := net.SplitHostPort(host); err != nil {
+		target = net.JoinHostPort(host, ssdpPort)
+	}
+
+	var dialer net.Dialer
+	conn, err := dialer.DialContext(ctx, "udp4", target)
+	if err != nil {
+		return "", fmt.Errorf("dialing %s: %w", target, err)
+	}
+	defer conn.Close()
+
+	deadline, ok := ctx.Deadline()
+	if !ok {
+		deadline = time.Now().Add(msearchTimeout)
+	}
+	if err := conn.SetDeadline(deadline); err != nil {
+		return "", err
+	}
+
+	msearch := strings.Join([]string{
+		"M-SEARCH * HTTP/1.1",
+		"HOST: " + target,
+		`MAN: "ssdp:discover"`,
+		"MX: 1",
+		"ST: " + dlnaSearchTarget,
+		"", "",
+	}, "\r\n")
+	if _, err := conn.Write([]byte(msearch)); err != nil {
+		return "", fmt.Errorf("sending M-SEARCH: %w", err)
+	}
+
+	// A device answers once per matching root/embedded device; read datagrams
+	// until one carries a LOCATION or the deadline passes.
+	buf := make([]byte, 2048)
+	for {
+		n, err := conn.Read(buf)
+		if err != nil {
+			return "", fmt.Errorf("awaiting SSDP response: %w", err)
+		}
+		if location := parseSSDPLocation(buf[:n]); location != "" {
+			return location, nil
+		}
+	}
+}
+
+// parseSSDPLocation extracts the LOCATION header value from a raw SSDP response,
+// returning "" when absent. Header names are case-insensitive per RFC 2616.
+func parseSSDPLocation(response []byte) string {
+	for line := range strings.SplitSeq(string(response), "\r\n") {
+		key, value, ok := strings.Cut(line, ":")
+		if ok && strings.EqualFold(strings.TrimSpace(key), "LOCATION") {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
 }
 
 // connect fetches the device description at info.Address, binds the AVTransport

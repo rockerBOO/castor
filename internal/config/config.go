@@ -41,8 +41,15 @@ type TMDB struct {
 // the agnostic layers below never name a family; resolve() collapses it into the
 // opaque device.Config they carry.
 type DeviceConfig struct {
-	Name string      `yaml:"name" validate:"required"`
+	// Name identifies the device to discovery. It is required only without Host:
+	// once Host pins the device, Name is just a display label and may be omitted.
+	Name string      `yaml:"name" validate:"required_without=Host"`
 	Type device.Type `yaml:"type" validate:"required"`
+
+	// Host pins the device's address to skip discovery (see device.Config.Address):
+	// a bare IP/host for any family, or a DLNA description URL. Left empty, Castor
+	// discovers the device by Name over SSDP/mDNS.
+	Host string `yaml:"host"`
 
 	Roku device.RokuConfig `yaml:"roku"`
 }
@@ -50,7 +57,7 @@ type DeviceConfig struct {
 // resolve builds the agnostic device.Config, attaching the selected family's
 // connect settings as the opaque Family payload the device layer interprets.
 func (d DeviceConfig) resolve() device.Config {
-	cfg := device.Config{Name: d.Name, Type: d.Type}
+	cfg := device.Config{Name: d.Name, Type: d.Type, Address: d.Host}
 	switch d.Type {
 	case device.TypeRoku:
 		cfg.Family = d.Roku

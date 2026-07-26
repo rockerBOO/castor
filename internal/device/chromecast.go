@@ -54,6 +54,18 @@ func (chromecast) connect(_ context.Context, info Info, _ Config) (Device, error
 	return &chromecastDevice{app: app}, nil
 }
 
+// locate pins a Chromecast by address, bypassing mDNS discovery. connect already
+// accepts a bare host (default port 8009) or host:port, so the address passes
+// straight through; a cast group on a non-default port is reached by pinning
+// host:port.
+func (chromecast) locate(_ context.Context, name, address string) (Info, error) {
+	return Info{
+		Name:    cmp.Or(name, hostOnly(address)),
+		Type:    TypeChromecast,
+		Address: address,
+	}, nil
+}
+
 // discover browses mDNS (_googlecast._tcp) for cast devices until ctx expires.
 // The entries channel is closed by the library when ctx is done, so ranging over
 // it consumes the full discovery window.

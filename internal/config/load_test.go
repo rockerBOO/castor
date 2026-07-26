@@ -87,6 +87,43 @@ func TestLoadEmptySectionKeepsDefaults(t *testing.T) {
 	}
 }
 
+// TestLoadHostPinsDeviceWithoutName confirms a pinned device.host makes
+// device.name optional (name is only required without host) and that host
+// resolves onto the agnostic device.Config as the Address the connect layer reads.
+func TestLoadHostPinsDeviceWithoutName(t *testing.T) {
+	dir := t.TempDir()
+	base := filepath.Join(dir, "config.yaml")
+	if err := os.WriteFile(base, []byte("device:\n  type: dlna\n  host: 192.168.0.3\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := Load(base)
+	if err != nil {
+		t.Fatalf("host should satisfy validation without name: %v", err)
+	}
+	if cfg.Device.Host != "192.168.0.3" {
+		t.Errorf("device.host = %q, want 192.168.0.3", cfg.Device.Host)
+	}
+	if got := cfg.Cast().Device.Address; got != "192.168.0.3" {
+		t.Errorf("host should resolve onto device.Config.Address, got %q", got)
+	}
+}
+
+// TestLoadRequiresNameWithoutHost guards the other half of required_without:
+// with neither name nor host, validation must fail rather than leave the device
+// unaddressable.
+func TestLoadRequiresNameWithoutHost(t *testing.T) {
+	dir := t.TempDir()
+	base := filepath.Join(dir, "config.yaml")
+	if err := os.WriteFile(base, []byte("device:\n  type: dlna\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := Load(base); err == nil {
+		t.Fatal("device with neither name nor host should fail validation")
+	}
+}
+
 // TestLoadFileOverridesDefault confirms the layering direction: a value the
 // file sets must win over the typed default, including durations parsed from
 // the "30s" string form.
