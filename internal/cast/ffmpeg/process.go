@@ -36,6 +36,7 @@ type Process struct {
 type startConfig struct {
 	stdin     io.Reader
 	extraPipe bool
+	workDir   string
 }
 
 type StartOption func(*startConfig)
@@ -43,6 +44,12 @@ type StartOption func(*startConfig)
 // WithStdin feeds r to ffmpeg's stdin (pipe:0 input).
 func WithStdin(r io.Reader) StartOption {
 	return func(c *startConfig) { c.stdin = r }
+}
+
+// WithWorkDir runs ffmpeg with dir as its working directory, so a muxer writing
+// relative output files (the HLS playlist and segments) lands them there.
+func WithWorkDir(dir string) StartOption {
+	return func(c *startConfig) { c.workDir = dir }
 }
 
 // WithExtraPipe opens a second output pipe on fd 3 (pipe:3), exposed as
@@ -61,6 +68,7 @@ func Start(ctx context.Context, path string, args []string, opts ...StartOption)
 
 	cmd := exec.CommandContext(ctx, path, args...)
 	cmd.Stdin = cfg.stdin
+	cmd.Dir = cfg.workDir
 
 	var extraRead, extraWrite *os.File
 	if cfg.extraPipe {
@@ -115,6 +123,17 @@ func Start(ctx context.Context, path string, args []string, opts ...StartOption)
 // surface the failure reason when the exit was not self-inflicted.
 func (p *Process) Wait() error {
 	return p.cmd.Wait()
+}
+
+// Kill signals the process to stop immediately. It is idempotent and safe to
+// call after the process has already exited (the error is ignored), so callers
+// can defer it as unconditional teardown on paths where context cancellation is
+// not the only way the encoder must stop (the HLS serve path, whose output is
+// files rather than a pipe that would EPIPE on close). Reap it with Wait.
+func (p *Process) Kill() {
+	if p.cmd.Process != nil {
+		_ = p.cmd.Process.Kill()
+	}
 }
 
 // StderrTail returns the most recent stderr lines, retained even while the

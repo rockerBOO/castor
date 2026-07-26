@@ -7,6 +7,29 @@ import (
 	"testing"
 )
 
+func TestFormatForContentType(t *testing.T) {
+	cases := []struct {
+		ct       string
+		muxer    string
+		ext      string
+		delivery DeliveryKind
+		ok       bool
+	}{
+		{MPEGTS, "mpegts", ".ts", DeliverStream, true},
+		{MP4, "mp4", ".mp4", DeliverStream, true},
+		{HLS, "hls", ".m3u8", DeliverSegmented, true},
+		{WebM, "", "", 0, false}, // a container castor advertises but cannot produce
+		{"", "", "", 0, false},   // inert pass-through output type must not resolve
+		{"bogus", "", "", 0, false},
+	}
+	for _, c := range cases {
+		f, ok := FormatForContentType(c.ct)
+		if ok != c.ok || f.Muxer != c.muxer || f.Extension != c.ext || (ok && f.Delivery != c.delivery) {
+			t.Errorf("FormatForContentType(%q) = (%+v, %v), want muxer=%q ext=%q delivery=%v ok=%v", c.ct, f, ok, c.muxer, c.ext, c.delivery, c.ok)
+		}
+	}
+}
+
 func TestStreamInfoPlayable(t *testing.T) {
 	cases := []struct {
 		name string

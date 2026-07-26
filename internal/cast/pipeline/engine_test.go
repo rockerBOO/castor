@@ -2,6 +2,7 @@ package pipeline
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -9,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"slices"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -20,8 +22,8 @@ import (
 )
 
 // fakeDevice is a Device stand-in that records what Run tells it to Play. On a
-// served cast it also fetches the URL it is handed: ServeToDevice blocks until a
-// client reads the replay server to EOF, so without a real reader Wait would hang
+// served cast it also fetches the URL it is handed: the replay-served path blocks
+// until a client reads the stream to EOF, so without a real reader Wait would hang
 // the whole idle-grace window. Pass-through leaves drain false: the source URL is
 // not one of our servers and must never be fetched.
 type fakeDevice struct {
@@ -120,12 +122,14 @@ func TestRunServeRemux(t *testing.T) {
 	source := origin.stream()
 
 	// Self-fetching, but only accepts MKV, so the mp4 source reaches the remux.
-	// Advertise AAC stereo so the source audio is copied, not re-encoded.
+	// Advertise AAC stereo so the source audio is copied, not re-encoded, and mp4
+	// as the served container (a self-fetching renderer must declare one).
 	dev := &fakeDevice{
 		caps: media.Renderer{
-			SelfFetch:  true,
-			Containers: []string{media.MKV},
-			Audio:      []media.AudioSupport{{Codec: media.CodecAAC, MaxChannels: 2}},
+			SelfFetch:       true,
+			Containers:      []string{media.MKV},
+			ServedContainer: media.MP4,
+			Audio:           []media.AudioSupport{{Codec: media.CodecAAC, MaxChannels: 2}},
 		},
 		drain: true,
 	}
@@ -158,6 +162,69 @@ func TestRunServeSpool(t *testing.T) {
 // mpegtsContentType is what the DLNA-style served path tells the device it is
 // fetching.
 const mpegtsContentType = media.MPEGTS
+
+// TestRunServeHLS is the live-HLS served branch (a self-fetching renderer that
+// rejects the source container and serves HLS, i.e. Roku): Run must remux to a
+// local HLS directory and point the device at the .m3u8, never the source URL.
+// It drives a real ffmpeg remux, then cancels to end the otherwise-live cast
+// rather than wait out the server's idle grace.
+func TestRunServeHLS(t *testing.T) {
+	ffmpegPath, ffprobePath := requireFFmpegTools(t)
+
+	origin := serveFixture(t, ffmpegPath)
+	source := origin.stream()
+
+	dev := &fakeDevice{
+		caps: media.Renderer{
+			SelfFetch:       true,
+			Containers:      []string{media.MKV}, // rejects the mp4 source -> remux
+			ServedContainer: media.HLS,
+			Audio:           []media.AudioSupport{{Codec: media.CodecAAC, MaxChannels: 2}},
+		},
+	}
+	cfg := core.Config{
+		Device:    core.DeviceConfig{Type: device.TypeChromecast}, // any self-fetch type
+		Transcode: core.TranscodeConfig{FFmpegPath: ffmpegPath, RWTimeout: 30 * time.Second},
+		Resolver:  resolve.Config{FFprobePath: ffprobePath, MaxHeight: 1080},
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	done := make(chan error, 1)
+	go func() { done <- Run(ctx, cfg, connectTo(dev), source, "127.0.0.1") }()
+
+	// Wait for the device to be pointed at the playlist, then end the live cast.
+	poll := time.NewTicker(50 * time.Millisecond)
+	defer poll.Stop()
+	deadline := time.After(45 * time.Second)
+	for {
+		if plays := dev.snapshot(); len(plays) == 1 {
+			if plays[0].contentType != media.HLS {
+				t.Errorf("served content type = %q, want %q", plays[0].contentType, media.HLS)
+			}
+			if !strings.HasSuffix(plays[0].url, ".m3u8") {
+				t.Errorf("HLS cast must point the device at a .m3u8 playlist, got %q", plays[0].url)
+			}
+			if plays[0].url == source.URL.String() {
+				t.Error("a served cast must not hand the device the source URL")
+			}
+			break
+		}
+		select {
+		case err := <-done:
+			t.Fatalf("Run returned before playback started: %v", err)
+		case <-deadline:
+			t.Fatal("device was never pointed at the HLS playlist")
+		case <-poll.C:
+		}
+	}
+
+	cancel()
+	if err := <-done; err != nil && !errors.Is(err, context.Canceled) {
+		t.Fatalf("Run: %v", err)
+	}
+}
 
 // runServed drives Run for a served plan under a bounded context (a wedged
 // ffmpeg fails the test instead of hanging the suite) and fails on any error.

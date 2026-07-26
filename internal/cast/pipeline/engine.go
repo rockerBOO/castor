@@ -88,8 +88,9 @@ func passthrough(ctx context.Context, dev device.Device, source *media.Stream) e
 
 // runRemux is the single-ffmpeg served path for a self-fetching renderer that
 // rejects the source container: network input, video stream-copied, container
-// changed to the plan's output type (mp4). No whisper, no input spool, though the
-// replay server still spools the output so the device can replay from 0.
+// changed to the plan's output type. No whisper, no input spool. A single-file
+// remux is spooled by the replay server so the device can replay from 0; a
+// segmented (HLS) remux is packaged into a directory the HLS server fronts.
 func runRemux(ctx context.Context, cfg core.Config, plan core.Plan, dev device.Device, source *media.Stream, localIP string) error {
 	slog.InfoContext(ctx, "execution plan", "delivery", "remux", "output_content_type", plan.OutputContentType)
 
@@ -99,7 +100,11 @@ func runRemux(ctx context.Context, cfg core.Config, plan core.Plan, dev device.D
 	}
 	defer func() { _ = os.RemoveAll(workDir) }()
 
-	opts := remuxNetworkOptions(source, cfg.Transcode.RWTimeout)
+	fmtInfo, ok := media.FormatForContentType(plan.OutputContentType)
+	if !ok {
+		return fmt.Errorf("no format for output content type %q", plan.OutputContentType)
+	}
+	opts := remuxNetworkOptions(source, cfg.Transcode.RWTimeout, fmtInfo.Muxer)
 
 	// Resolve audio from a source probe, the same decision the spool path makes
 	// off its spool. This path has no input spool, so it reads the upstream
@@ -122,13 +127,16 @@ func runRemux(ctx context.Context, cfg core.Config, plan core.Plan, dev device.D
 		"source_audio_channels", srcInfo.AudioChannels,
 	)
 
-	proc, err := startTranscode(ctx, cfg.Transcode.FFmpegPath, opts)
-	if err != nil {
-		return err
-	}
-	defer core.FinishEncoder(ctx, proc)
-
-	return core.ServeToDevice(ctx, dev, localIP, plan.OutputContentType, proc.Stdout, workDir)
+	// The delivery mechanism (replay-from-zero stream vs live HLS directory) is
+	// selected by fmtInfo.Delivery inside core.Serve, not here; this path just
+	// hands it the encode and where to serve from.
+	return core.Serve(ctx, dev, core.OpenParams{
+		FFmpegPath: cfg.Transcode.FFmpegPath,
+		Opts:       opts,
+		LocalIP:    localIP,
+		WorkDir:    workDir,
+		Format:     fmtInfo,
+	})
 }
 
 // runSpooled is the read-once cast for a renderer that does not self-fetch:
@@ -149,7 +157,11 @@ func runRemux(ctx context.Context, cfg core.Config, plan core.Plan, dev device.D
 // closed, and only then is the work directory removed, so no goroutine is still
 // writing a cue file into a directory being deleted.
 func runSpooled(parentCtx context.Context, cfg core.Config, connect ConnectFunc, source *media.Stream, localIP string) error {
-	plan := core.NewPlan(source, media.Renderer{SelfFetch: false}, cfg)
+	// The read-once spool serves MPEG-TS: the spool is strictly append-only so a
+	// tail can read it while it grows and the replay server can hand every client
+	// the stream from byte 0. That is a property of this delivery mechanism, not of
+	// any renderer, so the container is declared here rather than assumed in core.
+	plan := core.NewPlan(source, media.Renderer{SelfFetch: false, ServedContainer: media.MPEGTS}, cfg)
 	slog.InfoContext(parentCtx, "execution plan",
 		"delivery", "spool",
 		"output_content_type", plan.OutputContentType,
@@ -244,8 +256,8 @@ func runSpooled(parentCtx context.Context, cfg core.Config, connect ConnectFunc,
 	// Copy-vs-encode against the spool probe: stream-copy when nothing forces a
 	// re-encode (no burn-in, within the height ceiling, renderer decodes the
 	// envelope), else the most efficient advertised + hardware codec at its
-	// VBV-capped target. Identical decision to the old inline DLNA logic. ctx is
-	// threaded so a wedged encoder test-probe unwinds with the cast.
+	// VBV-capped target. Identical decision to the old inline per-device logic. ctx
+	// is threaded so a wedged encoder test-probe unwinds with the cast.
 	core.ResolveVideo(ctx, &opts, caps, srcInfo, cfg)
 
 	videoCodec := ffmpeg.CodecCopy
@@ -273,17 +285,28 @@ func runSpooled(parentCtx context.Context, cfg core.Config, connect ConnectFunc,
 	if subs != nil {
 		startOpts = append(startOpts, ffmpeg.WithExtraPipe()) // -progress on fd 3
 	}
-	proc, err := startTranscode(ctx, cfg.Transcode.FFmpegPath, opts, startOpts...)
-	if err != nil {
-		return err
-	}
-	defer core.FinishEncoder(ctx, proc)
 
-	if subs != nil && proc.Extra != nil {
-		subs.follow(ctx, g, proc.Extra)
+	fmtInfo, ok := media.FormatForContentType(plan.OutputContentType)
+	if !ok {
+		return fmt.Errorf("no format for output content type %q", plan.OutputContentType)
 	}
 
-	return core.ServeToDevice(ctx, d, localIP, plan.OutputContentType, proc.Stdout, workDir)
+	// core.Serve owns the encoder; OnStarted wires the burn-in follower to the
+	// encoder's -progress pipe (fd 3) as soon as it starts, keeping the whisper
+	// errgroup coupling here in the pipeline instead of in core.
+	return core.Serve(ctx, d, core.OpenParams{
+		FFmpegPath: cfg.Transcode.FFmpegPath,
+		Opts:       opts,
+		StartOpts:  startOpts,
+		LocalIP:    localIP,
+		WorkDir:    workDir,
+		Format:     fmtInfo,
+		OnStarted: func(proc *ffmpeg.Process) {
+			if subs != nil && proc.Extra != nil {
+				subs.follow(ctx, g, proc.Extra)
+			}
+		},
+	})
 }
 
 // deviceFuture is the async renderer connection. The connect goroutine runs in

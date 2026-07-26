@@ -1,9 +1,10 @@
 // Package core holds the device-agnostic decision layer and the machinery every
 // cast shares: config, source resolution, device discovery/connect, the pure
 // Plan (delivery/subtitle/output axes) with its copy-vs-encode resolvers, and the
-// replay-server delivery. It knows nothing about DLNA or Chromecast; the pipeline
-// executor and the device adapters import core, never the other way round, so a
-// device concern physically cannot leak across the boundary or into this core.
+// replay-server delivery. It knows nothing about any specific device family; the
+// pipeline executor and the device adapters import core, never the other way
+// round, so a device concern physically cannot leak across the boundary or into
+// this core.
 package core
 
 import (
@@ -32,10 +33,11 @@ type Config struct {
 	Whisper subtitle.Whisper
 }
 
-type DeviceConfig struct {
-	Name string      `yaml:"name" validate:"required"`
-	Type device.Type `yaml:"type" validate:"required"`
-}
+// DeviceConfig is the device section, owned by the device package so this
+// device-agnostic layer neither defines nor names any device family. Core reads
+// only its generic Name/Type (for discovery) and forwards the whole value to
+// device.Connect, which alone interprets any family-specific field.
+type DeviceConfig = device.Config
 
 type NetworkConfig struct {
 	Timeout   time.Duration `yaml:"timeout" validate:"required"`

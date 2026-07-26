@@ -43,7 +43,9 @@ type EncodeOptions struct {
 	// ffmpeg's -rw_timeout for HTTP(S) input. Ignored for stdin input.
 	RWTimeoutMicros int64
 
-	// OutputFormat is ffmpeg's muxer name ("mpegts", "mp4").
+	// OutputFormat is ffmpeg's muxer name ("mpegts", "mp4", "hls"). "hls" writes
+	// a playlist plus rolling fMP4 segments into the process working directory
+	// (see WithWorkDir) rather than a single stream on pipe:1.
 	OutputFormat string
 
 	// VideoEncoder re-encodes the video; nil stream-copies it. The encoder
@@ -163,6 +165,20 @@ func EncodeArgs(opts EncodeOptions) []string {
 		}
 		args = append(args, "-f", opts.PipeFormat, "-i", "pipe:0")
 	} else {
+		// Serving a deleting HLS window (see hlsOutputArgs) requires realtime
+		// pacing: unpaced, ffmpeg copies a VOD file at wire speed and its
+		// delete_segments window rolls off the segments faster than the device
+		// plays them at 1x, so only the tail is ever fetchable. Read at wall-clock
+		// speed with an initial burst that fills the window once, so the device
+		// prebuffers and then stays in lockstep. A genuinely live source already
+		// arrives at 1x, so this neither helps nor hurts it. The single-file mp4
+		// remux is spooled from byte 0 by the replay server and must stay unpaced.
+		if opts.OutputFormat == hlsMuxer {
+			args = append(args,
+				"-readrate", hlsPaceReadrate,
+				"-readrate_initial_burst", strconv.Itoa(hlsWindowSeconds),
+			)
+		}
 		args = append(args,
 			"-rw_timeout", strconv.FormatInt(opts.RWTimeoutMicros, 10),
 			"-reconnect", "1",
@@ -179,8 +195,8 @@ func EncodeArgs(opts EncodeOptions) []string {
 	// multi-track source can differ from the first track the planner probed to
 	// choose copy-vs-encode — so the encode would apply that decision to the
 	// wrong track. Pinning 0:a:0 keeps the encoded track identical to the probed
-	// one. (The DLNA spool is already single-audio via the puller's -map, so this
-	// only changes behaviour for the direct network remux.)
+	// one. (The read-once spool is already single-audio via the puller's -map, so
+	// this only changes behaviour for the direct network remux.)
 	args = append(args, "-map", "0:v:0", "-map", "0:a:0")
 
 	// Video filter chain. scale= runs first so text is rendered at the final
@@ -245,9 +261,9 @@ func EncodeArgs(opts EncodeOptions) []string {
 	switch opts.OutputFormat {
 	case "mpegts":
 		// mpegts container tuning. PCR and PAT/PMT need to repeat frequently
-		// so a renderer that joins mid-stream (Samsung's HEAD-probe-then-play
-		// pattern) can resync within one GOP. Annexb conversion for copied
-		// video is auto-inserted by ffmpeg per actual codec when needed.
+		// so a renderer that joins mid-stream (some smart TVs HEAD-probe then
+		// GET before playing) can resync within one GOP. Annexb conversion for
+		// copied video is auto-inserted by ffmpeg per actual codec when needed.
 		args = append(args,
 			"-mpegts_flags", "+resend_headers+initial_discontinuity",
 			// pat_period (not "mpegts_pat_period" — that name was removed
@@ -272,8 +288,49 @@ func EncodeArgs(opts EncodeOptions) []string {
 		args = append(args, "-progress", "pipe:3", "-stats_period", "0.1")
 	}
 
+	// HLS writes a playlist + segment files, not a stream on a pipe. The bare
+	// relative filenames rely on the process running WithWorkDir(the cast dir).
+	if opts.OutputFormat == hlsMuxer {
+		return append(args, hlsOutputArgs()...)
+	}
 	args = append(args, "-f", opts.OutputFormat, "pipe:1")
 	return args
+}
+
+// HLS output tuning. A live sliding-window fMP4 tail: hlsListSize segments of
+// ~hlsSegmentSeconds each keep hlsWindowSeconds on disk, comfortably above the
+// ~30s-behind-live-edge window HLS clients conventionally buffer; hls_playlist_type
+// stays unset so the window rolls (event/vod would pin the list size to 0 and
+// grow disk unbounded).
+const (
+	// hlsMuxer is ffmpeg's HLS muxer name and the OutputFormat value selecting the
+	// live-directory output (files under the work dir, not pipe:1).
+	hlsMuxer = "hls"
+	// hlsSegmentSeconds targets the segment length. With stream-copy the muxer can
+	// only cut on a source keyframe, so it is a lower bound, not exact.
+	hlsSegmentSeconds = 4
+	// hlsListSize is how many segments the rolling playlist keeps on disk.
+	hlsListSize = 8
+	// hlsWindowSeconds is the on-disk window; it also sizes the realtime pacing
+	// burst so the device can prebuffer one full window before pacing binds.
+	hlsWindowSeconds = hlsSegmentSeconds * hlsListSize
+	// hlsPaceReadrate reads the source at exactly wall-clock speed. Not the slight
+	// over-speed the pipe encode uses: the client consumes the deleting window at
+	// 1x, so any faster rolls the next-needed segment off the back before it asks.
+	hlsPaceReadrate = "1.0"
+)
+
+func hlsOutputArgs() []string {
+	return []string{
+		"-f", hlsMuxer,
+		"-hls_time", strconv.Itoa(hlsSegmentSeconds),
+		"-hls_list_size", strconv.Itoa(hlsListSize),
+		"-hls_flags", "delete_segments+independent_segments",
+		"-hls_segment_type", "fmp4",
+		"-hls_fmp4_init_filename", media.HLSInitName,
+		"-hls_segment_filename", media.HLSSegmentPattern,
+		media.HLSPlaylistName,
+	}
 }
 
 // Pull pacing per source nature. VOD bursts at wire speed then 2x
