@@ -3,8 +3,11 @@ package media
 // ProbeInfo is a structured description of a source stream, the subset an
 // ffprobe pass yields that the planner needs to decide whether the source can
 // be stream-copied to a renderer or must be re-encoded. Zero values mean
-// "unknown", which every capability check treats as "not safe to copy": a
-// failed or partial probe always falls back to a transcode.
+// "unknown"; most capability checks treat that as "not safe to copy" (a
+// failed or partial probe falls back to a transcode), except AudioChannels,
+// where an unknown count is trusted rather than force-transcoded (see
+// AudioSupport.accepts) since a matching codec with no probed layout isn't
+// worth the quality loss of an unnecessary re-encode.
 //
 // It is produced by the ffmpeg adapter (ffmpeg.Probe) and consumed by a
 // Renderer's copy check; the type lives here, in the domain, so neither side
