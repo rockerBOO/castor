@@ -23,11 +23,20 @@ type chromecastDevice struct {
 
 var _ Device = (*chromecastDevice)(nil)
 
-// connectChromecast opens the cast application channel. The underlying
-// library's Start has no context support, so cancellation cannot interrupt
-// the dial. Address may be a bare host (default port 8009) or host:port as
-// produced by discovery; cast groups advertise on non-default ports.
-func connectChromecast(info Info) (Device, error) {
+// chromecast is the Google Cast strategy. Cast is a smart client: handed a URL it
+// fetches the media itself, so it self-fetches.
+type chromecast struct{}
+
+var _ renderer = chromecast{}
+
+func (chromecast) selfFetches() bool { return true }
+
+// connect opens the cast application channel. The underlying library's Start has
+// no context support, so cancellation cannot interrupt the dial, and Cast needs no
+// family connect settings, so ctx and cfg are ignored. Address may be a bare host
+// (default port 8009) or host:port as produced by discovery; cast groups advertise
+// on non-default ports.
+func (chromecast) connect(_ context.Context, info Info, _ Config) (Device, error) {
 	host := info.Address
 	port := chromecastPort
 	if h, p, err := net.SplitHostPort(info.Address); err == nil {
@@ -45,10 +54,10 @@ func connectChromecast(info Info) (Device, error) {
 	return &chromecastDevice{app: app}, nil
 }
 
-// discoverChromecast browses mDNS (_googlecast._tcp) for cast devices until
-// ctx expires. The entries channel is closed by the library when ctx is done,
-// so ranging over it consumes the full discovery window.
-func discoverChromecast(ctx context.Context) []Info {
+// discover browses mDNS (_googlecast._tcp) for cast devices until ctx expires.
+// The entries channel is closed by the library when ctx is done, so ranging over
+// it consumes the full discovery window.
+func (chromecast) discover(ctx context.Context) []Info {
 	entries, err := castdns.DiscoverCastDNSEntries(ctx, nil)
 	if err != nil {
 		slog.WarnContext(ctx, "chromecast discovery error", "error", err)

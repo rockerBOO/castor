@@ -45,9 +45,17 @@ type rokuDevice struct {
 
 var _ Device = (*rokuDevice)(nil)
 
-// discoverRoku finds Rokus over SSDP. RawSearch already filters to ST roku:ecp,
-// so every response is a Roku; we dedupe re-announcements and resolve names.
-func discoverRoku(ctx context.Context) []Info {
+// roku is the Roku ECP strategy. Castor's sideloaded channel pulls the stream URL
+// it is launched with, so Roku self-fetches.
+type roku struct{}
+
+var _ renderer = roku{}
+
+func (roku) selfFetches() bool { return true }
+
+// discover finds Rokus over SSDP. RawSearch already filters to ST roku:ecp, so
+// every response is a Roku; we dedupe re-announcements and resolve names.
+func (roku) discover(ctx context.Context) []Info {
 	hc, err := httpu.NewHTTPUClient()
 	if err != nil {
 		slog.WarnContext(ctx, "roku discovery", "error", err)
@@ -132,12 +140,16 @@ func parseDeviceInfoName(body []byte) string {
 	return cmp.Or(strings.TrimSpace(info.UserDeviceName), strings.TrimSpace(info.ModelName))
 }
 
-// connectRoku resolves the ECP base URL and makes sure the channel it will launch
+// connect resolves the ECP base URL and makes sure the channel it will launch
 // actually exists. ECP is stateless, so there is no connection to hold. The
 // sideloaded dev channel is Castor-managed (installed on demand); a published
 // app_id is only verified present, so a missing/mistyped id fails here with a
-// clear message instead of Play() no-oping on Roku's permissive /launch.
-func connectRoku(ctx context.Context, info Info, cfg RokuConfig) (Device, error) {
+// clear message instead of Play() no-oping on Roku's permissive /launch. The Roku
+// family's connect settings are read here, the only place that knows RokuConfig,
+// by asserting them out of the opaque cfg.Family (a zero RokuConfig when unset).
+func (roku) connect(ctx context.Context, info Info, cfg Config) (Device, error) {
+	rc, _ := cfg.Family.(RokuConfig)
+
 	root, err := url.Parse(info.Address)
 	if err != nil || root.Host == "" {
 		return nil, fmt.Errorf("parsing roku address %q: %w", info.Address, err)
@@ -145,13 +157,13 @@ func connectRoku(ctx context.Context, info Info, cfg RokuConfig) (Device, error)
 
 	dev := &rokuDevice{
 		ecp:   &url.URL{Scheme: "http", Host: root.Host},
-		appID: cmp.Or(cfg.AppID, rokuDefaultAppID),
+		appID: cmp.Or(rc.AppID, rokuDefaultAppID),
 		name:  info.Name,
 		hc:    &http.Client{Timeout: rokuHTTPTimeout},
 	}
 
 	if dev.appID == rokuDefaultAppID {
-		if err := dev.ensureChannel(ctx, cfg); err != nil {
+		if err := dev.ensureChannel(ctx, rc); err != nil {
 			return nil, err
 		}
 		return dev, nil

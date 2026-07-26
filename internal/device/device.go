@@ -33,7 +33,8 @@ const (
 // concurrently. It MUST agree with the connected renderer's Capabilities().SelfFetch,
 // which the copy-vs-encode stage reads once the device is in hand.
 func SelfFetches(t Type) bool {
-	return t == TypeChromecast || t == TypeRoku
+	r, ok := rendererFor(t)
+	return ok && r.selfFetches()
 }
 
 type Info struct {
@@ -46,11 +47,12 @@ type Info struct {
 // which renderer to reach (Name, Type) plus an opaque Family payload. It names no
 // device family, so core/cast and every other device carry it without knowing any
 // one family exists. The composition root (internal/config) fills Family with the
-// selected family's typed connect settings; only that family's connect reads it,
-// via a type assertion in Connect. Family is nil for a family that needs none.
+// selected family's typed connect settings; only that family's strategy reads it,
+// via a type assertion in its own connect. Family is nil for a family that needs none.
 type Config struct {
-	Name   string
-	Type   Type
+	Name string
+	Type Type
+
 	Family any
 }
 
@@ -75,20 +77,59 @@ type Device interface {
 	Close() error
 }
 
-// Connect dispatches on the device type. Each family reads its own connect
-// settings out of the opaque cfg.Family (a type assertion here, in the only
-// package that knows the family types); callers upstream forward cfg blindly.
-func Connect(ctx context.Context, info Info, cfg Config) (Device, error) {
-	switch info.Type {
-	case TypeDLNA:
-		return connectDLNA(ctx, info)
-	case TypeChromecast:
-		return connectChromecast(info)
-	case TypeRoku:
-		roku, _ := cfg.Family.(RokuConfig)
-		return connectRoku(ctx, info, roku)
+// renderer is one device family's strategy: everything protocol-specific about
+// reaching a renderer of that family, behind a single interface. Discovering a
+// device, locating a pinned one, and connecting are all family-specific, so they
+// live here rather than as switches scattered across the package. The registry
+// below is the one place a family is wired in and the sole dispatch table, so no
+// operation carries a per-family type switch; adding a family is implementing this
+// interface and registering it.
+type renderer interface {
+	// selfFetches reports whether the family fetches media URLs itself (a smart
+	// client) rather than only playing bytes castor serves it. It is a static
+	// protocol property answered without a device in hand (see SelfFetches).
+	selfFetches() bool
+
+	// discover scans the local network for devices of this family until ctx expires,
+	// contributing no devices (rather than erroring) when the scan fails.
+	discover(ctx context.Context) []Info
+
+	// connect opens a session to the device at info. cfg carries the family's opaque
+	// connect settings (Config.Family), asserted and read only by this family.
+	connect(ctx context.Context, info Info, cfg Config) (Device, error)
+}
+
+// renderers is the family registry: the single wiring point for renderer families
+// and the sole dispatch table for every family-specific operation. Registry order
+// is the discovery/scan listing order.
+var renderers = []struct {
+	Type Type
+	renderer
+}{
+	{TypeDLNA, dlna{}},
+	{TypeChromecast, chromecast{}},
+	{TypeRoku, roku{}},
+}
+
+// rendererFor returns the strategy registered for a device type.
+func rendererFor(t Type) (renderer, bool) {
+	for _, r := range renderers {
+		if r.Type == t {
+			return r.renderer, true
+		}
 	}
-	return nil, fmt.Errorf("unknown device type: %q", info.Type)
+	return nil, false
+}
+
+// Connect opens a session to the renderer described by info, dispatching to its
+// family strategy. cfg is forwarded blindly from upstream; only the target
+// family's connect reads its own settings out of cfg.Family.
+func Connect(ctx context.Context, info Info, cfg Config) (Device, error) {
+	r, ok := rendererFor(info.Type)
+	if !ok {
+		return nil, fmt.Errorf("unknown device type: %q", info.Type)
+	}
+	return r.connect(ctx, info, cfg)
 }
 
 func FindInfo(ctx context.Context, timeout time.Duration, dtype Type, name string) (Info, error) {
@@ -104,20 +145,21 @@ func FindInfo(ctx context.Context, timeout time.Duration, dtype Type, name strin
 	return Info{}, fmt.Errorf("device %q (type %s) not found", name, dtype)
 }
 
-// Discover scans the local network for renderers: DLNA via SSDP (MediaRenderer),
-// Chromecast via mDNS (_googlecast._tcp), and Roku via SSDP (roku:ecp). All scans
-// run in parallel and share the same timeout window; a protocol that fails
-// contributes no devices rather than failing the whole scan.
+// Discover scans the local network for renderers of every registered family in
+// parallel (DLNA via SSDP MediaRenderer, Chromecast via mDNS _googlecast._tcp,
+// Roku via SSDP roku:ecp), sharing one timeout window; a family that fails
+// contributes no devices rather than failing the whole scan. Results follow the
+// registry order.
 func Discover(ctx context.Context, timeout time.Duration) ([]Info, error) {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	var dlna, chromecast, roku []Info
+	found := make([][]Info, len(renderers))
 	var wg sync.WaitGroup
-	wg.Go(func() { dlna = discoverDLNA(ctx) })
-	wg.Go(func() { chromecast = discoverChromecast(ctx) })
-	wg.Go(func() { roku = discoverRoku(ctx) })
+	for i, r := range renderers {
+		wg.Go(func() { found[i] = r.discover(ctx) })
+	}
 	wg.Wait()
 
-	return slices.Concat(dlna, chromecast, roku), nil
+	return slices.Concat(found...), nil
 }

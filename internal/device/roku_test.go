@@ -286,7 +286,7 @@ func TestAppInstalled(t *testing.T) {
 }
 
 // rokuAppsServer stands in for a Roku's ECP endpoint, answering /query/apps with
-// the given body. connectRoku only needs /query/apps; anything else 404s.
+// the given body. roku connect only needs /query/apps; anything else 404s.
 func rokuAppsServer(t *testing.T, appsBody string) Info {
 	t.Helper()
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -302,9 +302,9 @@ func rokuAppsServer(t *testing.T, appsBody string) Info {
 
 func TestConnectRokuDevChannelInstalled(t *testing.T) {
 	info := rokuAppsServer(t, `<apps><app id="dev">Castor</app></apps>`)
-	dev, err := connectRoku(context.Background(), info, RokuConfig{})
+	dev, err := roku{}.connect(context.Background(), info, Config{Family: RokuConfig{}})
 	if err != nil {
-		t.Fatalf("connectRoku: %v", err)
+		t.Fatalf("roku connect: %v", err)
 	}
 	if dev == nil {
 		t.Fatal("expected a connected device")
@@ -313,7 +313,7 @@ func TestConnectRokuDevChannelInstalled(t *testing.T) {
 
 func TestConnectRokuDevChannelMissingNoPassword(t *testing.T) {
 	info := rokuAppsServer(t, `<apps><app id="12">Netflix</app></apps>`)
-	_, err := connectRoku(context.Background(), info, RokuConfig{})
+	_, err := roku{}.connect(context.Background(), info, Config{Family: RokuConfig{}})
 	if err == nil {
 		t.Fatal("expected an error when the dev channel is missing and no password is set")
 	}
@@ -324,7 +324,7 @@ func TestConnectRokuDevChannelMissingNoPassword(t *testing.T) {
 
 func TestConnectRokuForeignDevChannelNoPassword(t *testing.T) {
 	info := rokuAppsServer(t, `<apps><app id="dev">SomeoneElse</app></apps>`)
-	_, err := connectRoku(context.Background(), info, RokuConfig{})
+	_, err := roku{}.connect(context.Background(), info, Config{Family: RokuConfig{}})
 	if err == nil {
 		t.Fatal("expected an error when a foreign dev channel occupies the slot and no password is set")
 	}
@@ -336,10 +336,10 @@ func TestConnectRokuForeignDevChannelNoPassword(t *testing.T) {
 func TestConnectRokuPublishedAppVerified(t *testing.T) {
 	info := rokuAppsServer(t, `<apps><app id="12345">MyChannel</app></apps>`)
 
-	if _, err := connectRoku(context.Background(), info, RokuConfig{AppID: "12345"}); err != nil {
-		t.Fatalf("connectRoku with an installed published app_id: %v", err)
+	if _, err := (roku{}).connect(context.Background(), info, Config{Family: RokuConfig{AppID: "12345"}}); err != nil {
+		t.Fatalf("roku connect with an installed published app_id: %v", err)
 	}
-	if _, err := connectRoku(context.Background(), info, RokuConfig{AppID: "99999"}); err == nil {
+	if _, err := (roku{}).connect(context.Background(), info, Config{Family: RokuConfig{AppID: "99999"}}); err == nil {
 		t.Fatal("expected an error for a published app_id that is not installed")
 	}
 }
@@ -350,7 +350,7 @@ func mustParseURL(t *testing.T, s string) *url.URL {
 	if err != nil {
 		t.Fatalf("parsing %q: %v", s, err)
 	}
-	// Play and queryApps set Path per request, so keep only scheme+host like connectRoku.
+	// Play and queryApps set Path per request, so keep only scheme+host like roku connect.
 	if strings.Contains(s, "://") && u.Path == "/" {
 		u.Path = ""
 	}

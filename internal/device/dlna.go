@@ -44,8 +44,16 @@ func (d *dlnaDevice) Capabilities() media.Renderer { return d.caps }
 
 var _ Device = (*dlnaDevice)(nil)
 
-// discoverDLNA browses SSDP for UPnP MediaRenderer devices until ctx expires.
-func discoverDLNA(ctx context.Context) []Info {
+// dlna is the DLNA/UPnP AVTransport strategy. A DLNA renderer only plays bytes
+// castor serves it (it never fetches a source URL), so it does not self-fetch.
+type dlna struct{}
+
+var _ renderer = dlna{}
+
+func (dlna) selfFetches() bool { return false }
+
+// discover browses SSDP for UPnP MediaRenderer devices until ctx expires.
+func (dlna) discover(ctx context.Context) []Info {
 	results, err := goupnp.DiscoverDevicesCtx(ctx, "urn:schemas-upnp-org:device:MediaRenderer:1")
 	if err != nil {
 		slog.WarnContext(ctx, "dlna discovery error", "error", err)
@@ -87,7 +95,10 @@ func dlnaInfo(result goupnp.MaybeRootDevice) (Info, bool) {
 	}, true
 }
 
-func connectDLNA(ctx context.Context, info Info) (Device, error) {
+// connect fetches the device description at info.Address, binds the AVTransport
+// client, and negotiates capabilities. DLNA needs no family connect settings, so
+// cfg is ignored.
+func (dlna) connect(ctx context.Context, info Info, _ Config) (Device, error) {
 	u, err := url.Parse(info.Address)
 	if err != nil {
 		return nil, fmt.Errorf("parsing device location URL: %w", err)
