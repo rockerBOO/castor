@@ -28,7 +28,7 @@ func hasFlag(args []string, flag string) bool {
 
 func TestEncodeArgsCopyRemux(t *testing.T) {
 	// A nil VideoEncoder stream-copies the video.
-	args := EncodeArgs(EncodeOptions{
+	args, err := EncodeArgs(EncodeOptions{
 		PipeFormat:      "mpegts",
 		OutputFormat:    "mpegts",
 		AudioCodec:      "aac",
@@ -36,6 +36,9 @@ func TestEncodeArgsCopyRemux(t *testing.T) {
 		AudioSampleRate: 48000,
 		AudioChannels:   2,
 	})
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	if got := argValue(args, "-c:v"); got != "copy" {
 		t.Fatalf("video codec = %q, want copy", got)
@@ -68,20 +71,23 @@ func TestEncodeArgsReadrateHeadroom(t *testing.T) {
 	// Burning subtitles paces the encode with -readrate. It must be just above
 	// realtime (EncodeReadrate), not 1.0: at dead-even playback speed the
 	// renderer's buffer has no headroom to rebuild after jitter and rebuffers.
-	args := EncodeArgs(EncodeOptions{
+	args, err := EncodeArgs(EncodeOptions{
 		PipeFormat:       "mpegts",
 		OutputFormat:     "mpegts",
 		VideoEncoder:     &libx264,
 		SubtitleTextFile: "/tmp/cue.txt",
 		AudioCodec:       "aac",
 	})
+	if err != nil {
+		t.Fatal(err)
+	}
 	if got := argValue(args, "-readrate"); got != EncodeReadrate {
 		t.Errorf("readrate = %q, want %q (headroom above realtime)", got, EncodeReadrate)
 	}
 }
 
 func TestEncodeArgsLibx264(t *testing.T) {
-	args := EncodeArgs(EncodeOptions{
+	args, err := EncodeArgs(EncodeOptions{
 		PipeFormat:          "mpegts",
 		OutputFormat:        "mpegts",
 		VideoEncoder:        &libx264,
@@ -92,6 +98,9 @@ func TestEncodeArgsLibx264(t *testing.T) {
 		KeyframeIntervalSec: 2,
 		AudioCodec:          "aac",
 	})
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	if got := argValue(args, "-c:v"); got != "libx264" {
 		t.Fatalf("video codec = %q, want libx264", got)
@@ -123,7 +132,7 @@ func TestEncodeArgsLibx264(t *testing.T) {
 }
 
 func TestEncodeArgsVAAPI(t *testing.T) {
-	args := EncodeArgs(EncodeOptions{
+	args, err := EncodeArgs(EncodeOptions{
 		PipeFormat:          "mpegts",
 		OutputFormat:        "mpegts",
 		VideoEncoder:        &h264VAAPI,
@@ -134,6 +143,9 @@ func TestEncodeArgsVAAPI(t *testing.T) {
 		KeyframeIntervalSec: 2,
 		AudioCodec:          "aac",
 	})
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	if got := argValue(args, "-init_hw_device"); got != "vaapi=va:"+vaapiRenderNode {
 		t.Errorf("hw device = %q, want vaapi=va:%s", got, vaapiRenderNode)
@@ -178,7 +190,7 @@ func TestEncodeArgsVAAPI(t *testing.T) {
 }
 
 func TestEncodeArgsVideoToolbox(t *testing.T) {
-	args := EncodeArgs(EncodeOptions{
+	args, err := EncodeArgs(EncodeOptions{
 		PipeFormat:          "mpegts",
 		OutputFormat:        "mpegts",
 		VideoEncoder:        &h264VideoToolbox,
@@ -189,6 +201,9 @@ func TestEncodeArgsVideoToolbox(t *testing.T) {
 		KeyframeIntervalSec: 2,
 		AudioCodec:          "aac",
 	})
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	if got := argValue(args, "-c:v"); got != "h264_videotoolbox" {
 		t.Fatalf("video codec = %q, want h264_videotoolbox", got)
@@ -225,19 +240,39 @@ func TestEncodeArgsSubtitlesBurnIn(t *testing.T) {
 	// The planner supplies a real encoder whenever subtitles are burned in
 	// (drawtext operates on decoded frames), so drawtext joins the filter chain
 	// and the encoder runs.
-	args := EncodeArgs(EncodeOptions{
+	args, err := EncodeArgs(EncodeOptions{
 		PipeFormat:       "mpegts",
 		OutputFormat:     "mpegts",
 		VideoEncoder:     &libx264,
 		SubtitleTextFile: "/tmp/cue.txt",
 		AudioCodec:       "aac",
 	})
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	if got := argValue(args, "-c:v"); got != "libx264" {
 		t.Fatalf("video codec = %q, want libx264", got)
 	}
 	if vf := argValue(args, "-vf"); !strings.Contains(vf, "drawtext") {
 		t.Errorf("-vf = %q, want drawtext burn-in", vf)
+	}
+}
+
+// TestEncodeArgsSubtitlesRequireEncoder pins the guard that replaces caller
+// discipline: a copied bitstream can't carry drawtext (it needs decoded
+// frames), so this combination must fail loudly here instead of surfacing
+// later as ffmpeg's unrelated "Filtering and streamcopy cannot be used
+// together" error.
+func TestEncodeArgsSubtitlesRequireEncoder(t *testing.T) {
+	_, err := EncodeArgs(EncodeOptions{
+		PipeFormat:       "mpegts",
+		OutputFormat:     "mpegts",
+		SubtitleTextFile: "/tmp/cue.txt",
+		AudioCodec:       "aac",
+	})
+	if err == nil {
+		t.Fatal("want an error for SubtitleTextFile set with a nil VideoEncoder, got nil")
 	}
 }
 
@@ -271,13 +306,16 @@ func TestEncodeArgsHLSOutput(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	args := EncodeArgs(EncodeOptions{
+	args, err := EncodeArgs(EncodeOptions{
 		SourceURL:         src,
 		SourceContentType: media.MKV,
 		OutputFormat:      "hls",
 		AudioCodec:        "aac",
 		AudioBitrate:      "256k",
 	})
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	// HLS is directory output: no pipe:1, and the last token is the playlist.
 	if hasFlag(args, "pipe:1") {
@@ -324,12 +362,15 @@ func TestEncodeArgsMP4RemuxUnpaced(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	args := EncodeArgs(EncodeOptions{
+	args, err := EncodeArgs(EncodeOptions{
 		SourceURL:         src,
 		SourceContentType: media.MKV,
 		OutputFormat:      "mp4",
 		AudioCodec:        "aac",
 	})
+	if err != nil {
+		t.Fatal(err)
+	}
 	if hasFlag(args, "-readrate") {
 		t.Error("the mp4 remux is replay-spooled from byte 0 and must not be paced")
 	}

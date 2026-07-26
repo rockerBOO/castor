@@ -133,8 +133,16 @@ func containerInputArgs(contentType string) []string {
 
 // EncodeArgs assembles the encode command line. No "magic" flags: every
 // argument is either part of the standard input/output setup or comes
-// straight from a field in EncodeOptions.
-func EncodeArgs(opts EncodeOptions) []string {
+// straight from a field in EncodeOptions. It enforces the one cross-field
+// contract EncodeOptions documents but can't express in its types: a
+// SubtitleTextFile burn-in needs decoded frames, so it requires a real
+// VideoEncoder rather than failing later inside ffmpeg with an unrelated
+// "Filtering and streamcopy cannot be used together".
+func EncodeArgs(opts EncodeOptions) ([]string, error) {
+	if opts.SubtitleTextFile != "" && opts.VideoEncoder == nil {
+		return nil, fmt.Errorf("subtitle burn-in requires a video re-encode: VideoEncoder is nil with SubtitleTextFile set")
+	}
+
 	// -nostats: the \r-terminated progress line never completes, so it
 	// accumulates into one giant stderr "line" that drowns the tail buffer
 	// real errors live in. Position tracking uses -progress instead.
@@ -291,10 +299,10 @@ func EncodeArgs(opts EncodeOptions) []string {
 	// HLS writes a playlist + segment files, not a stream on a pipe. The bare
 	// relative filenames rely on the process running WithWorkDir(the cast dir).
 	if opts.OutputFormat == hlsMuxer {
-		return append(args, hlsOutputArgs()...)
+		return append(args, hlsOutputArgs()...), nil
 	}
 	args = append(args, "-f", opts.OutputFormat, "pipe:1")
-	return args
+	return args, nil
 }
 
 // HLS output tuning. A live sliding-window fMP4 tail: hlsListSize segments of

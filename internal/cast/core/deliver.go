@@ -111,7 +111,11 @@ func Serve(ctx context.Context, dev device.Device, p OpenParams) error {
 // server then the encoder, so nothing is left writing when the caller removes the
 // work directory.
 func openStream(ctx context.Context, p OpenParams, headers map[string]string) (*session, error) {
-	proc, err := ffmpeg.Start(ctx, p.FFmpegPath, ffmpeg.EncodeArgs(p.Opts), p.StartOpts...)
+	args, err := ffmpeg.EncodeArgs(p.Opts)
+	if err != nil {
+		return nil, fmt.Errorf("building encode args: %w", err)
+	}
+	proc, err := ffmpeg.Start(ctx, p.FFmpegPath, args, p.StartOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("starting transcode: %w", err)
 	}
@@ -147,8 +151,12 @@ func openStream(ctx context.Context, p OpenParams, headers map[string]string) (*
 // goroutine, then closes the server, so nothing writes into the work directory
 // after the caller removes it.
 func openSegmented(ctx context.Context, p OpenParams, _ map[string]string) (*session, error) {
+	args, err := ffmpeg.EncodeArgs(p.Opts)
+	if err != nil {
+		return nil, fmt.Errorf("building encode args: %w", err)
+	}
 	startOpts := append(slices.Clone(p.StartOpts), ffmpeg.WithWorkDir(p.WorkDir))
-	proc, err := ffmpeg.Start(ctx, p.FFmpegPath, ffmpeg.EncodeArgs(p.Opts), startOpts...)
+	proc, err := ffmpeg.Start(ctx, p.FFmpegPath, args, startOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("starting transcode: %w", err)
 	}
