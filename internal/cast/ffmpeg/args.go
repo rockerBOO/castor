@@ -389,6 +389,7 @@ func PullArgs(opts PullOptions) []string {
 	}
 
 	args := []string{
+		"-nostats",
 		"-loglevel", logLevel,
 		"-rw_timeout", strconv.FormatInt(opts.RWTimeoutMicros, 10),
 		"-reconnect", "1",
