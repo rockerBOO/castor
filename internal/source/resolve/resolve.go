@@ -116,7 +116,11 @@ func (c candidate) exceedsCap(maxHeight int) bool {
 // bestCandidate picks the stream to cast: one within the height cap is always
 // preferred over one that exceeds it (so a direct 1080p beats a direct 4K when
 // capped at 1080, even at a lower bitrate); ties, and the all-over-cap case,
-// fall back to highest bandwidth.
+// fall back to highest bandwidth, then tallest probed height. The height
+// tiebreak matters because ffprobe frequently can't report a top-level
+// bit_rate for an HLS master, which floors every such candidate's bandwidth to
+// the same value (see RankStreams) and would otherwise leave the pick to
+// whichever candidate happened to be probed first.
 func bestCandidate(pool []candidate, maxHeight int) candidate {
 	return slices.MaxFunc(pool, func(a, b candidate) int {
 		if ao, bo := a.exceedsCap(maxHeight), b.exceedsCap(maxHeight); ao != bo {
@@ -125,7 +129,10 @@ func bestCandidate(pool []candidate, maxHeight int) candidate {
 			}
 			return -1
 		}
-		return cmp.Compare(a.stream.Bandwidth, b.stream.Bandwidth)
+		return cmp.Or(
+			cmp.Compare(a.stream.Bandwidth, b.stream.Bandwidth),
+			cmp.Compare(a.height, b.height),
+		)
 	})
 }
 

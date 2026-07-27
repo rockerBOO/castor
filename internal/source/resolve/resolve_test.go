@@ -113,6 +113,12 @@ func TestBestCandidate(t *testing.T) {
 			maxHeight: 1080,
 			want:      "/unknown",
 		},
+		{
+			name:      "tied bandwidth (unprobeable HLS master bit_rate) falls back to tallest height",
+			pool:      []candidate{hls("/290", 290, 1), hls("/1808", 1808, 1), hls("/580", 580, 1)},
+			maxHeight: 2160,
+			want:      "/1808",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
