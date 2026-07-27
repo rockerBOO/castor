@@ -3,6 +3,7 @@ package device
 import (
 	"cmp"
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net"
@@ -11,6 +12,7 @@ import (
 	"time"
 
 	"github.com/huin/goupnp"
+	"github.com/huin/goupnp/soap"
 
 	"github.com/stupside/castor/internal/media"
 )
@@ -416,6 +418,20 @@ func codecNames(vs []media.VideoSupport) []string {
 	return names
 }
 
+// transportLockedRetries and transportLockedDelay bound how long an AVTransport
+// action waits out UPnP error 705 ("Transport is locked"). Renderers (Samsung
+// TVs in particular) react to SetAVTransportURI by probing the resource
+// themselves (a HEAD then a short GET; see the dance replay/server.go's
+// handler expects) before their transport accepts the next action, so either
+// SetAVTransportURI (racing a still-tearing-down prior session) or the Play
+// that immediately follows it can land mid-probe and be rejected as locked.
+// The fault clears once the probe/teardown finishes, so it is worth a short,
+// bounded wait rather than failing the cast outright.
+const (
+	transportLockedRetries = 5
+	transportLockedDelay   = 300 * time.Millisecond
+)
+
 // Play sets the AV transport URI and tells the renderer to begin playback.
 // The pipeline burns subtitles directly into the video upstream of this call,
 // so the renderer plays a single video resource with no separate caption track.
@@ -431,7 +447,9 @@ func (d *dlnaDevice) Play(ctx context.Context, streamURL *url.URL, contentType s
 		CurrentURI         string
 		CurrentURIMetaData string
 	}{"0", streamURL.String(), metadata}
-	if err := d.action(ctx, "SetAVTransportURI", setURI); err != nil {
+	if err := retryTransportLocked(ctx, transportLockedRetries, transportLockedDelay, func() error {
+		return d.action(ctx, "SetAVTransportURI", setURI)
+	}); err != nil {
 		return fmt.Errorf("setting transport URI: %w", err)
 	}
 
@@ -439,10 +457,39 @@ func (d *dlnaDevice) Play(ctx context.Context, streamURL *url.URL, contentType s
 		InstanceID string
 		Speed      string
 	}{"0", "1"}
-	if err := d.action(ctx, "Play", play); err != nil {
+	if err := retryTransportLocked(ctx, transportLockedRetries, transportLockedDelay, func() error {
+		return d.action(ctx, "Play", play)
+	}); err != nil {
 		return fmt.Errorf("starting playback: %w", err)
 	}
 	return nil
+}
+
+// retryTransportLocked calls do up to retries times, retrying while it fails
+// with UPnP error 705 ("Transport is locked") and waiting delay between
+// attempts. It stops early, returning the last error, if ctx is done first.
+func retryTransportLocked(ctx context.Context, retries int, delay time.Duration, do func() error) error {
+	var err error
+	for attempt := range retries {
+		err = do()
+		if !isTransportLocked(err) {
+			return err
+		}
+		slog.DebugContext(ctx, "transport locked, retrying action", "attempt", attempt+1)
+		select {
+		case <-ctx.Done():
+			return err
+		case <-time.After(delay):
+		}
+	}
+	return err
+}
+
+// isTransportLocked reports whether err is a UPnP fault carrying error code
+// 705 ("Transport is locked").
+func isTransportLocked(err error) bool {
+	var fault *soap.SOAPFaultError
+	return errors.As(err, &fault) && fault.Detail.UPnPError.Errorcode == 705
 }
 
 // action performs a SOAP action against the renderer's AVTransport service,

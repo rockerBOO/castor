@@ -1,11 +1,15 @@
 package device
 
 import (
+	"context"
+	"errors"
 	"net/url"
 	"slices"
 	"testing"
+	"time"
 
 	"github.com/huin/goupnp"
+	"github.com/huin/goupnp/soap"
 
 	"github.com/stupside/castor/internal/media"
 )
@@ -237,4 +241,107 @@ func TestParseSinkProtocolInfo(t *testing.T) {
 	if !fallbackCaps().SupportsCodec(media.CodecH264) {
 		t.Error("fallbackCaps must at least support H.264")
 	}
+}
+
+// transportLockedFault builds a SOAP fault carrying the given UPnP error code,
+// as goupnp's PerformActionCtx returns it verbatim (unwrapped) on a fault.
+func transportLockedFault(code int) error {
+	fault := &soap.SOAPFaultError{}
+	fault.Detail.UPnPError.Errorcode = code
+	return fault
+}
+
+func TestIsTransportLocked(t *testing.T) {
+	if !isTransportLocked(transportLockedFault(705)) {
+		t.Error("error code 705 should be reported as transport locked")
+	}
+	if isTransportLocked(transportLockedFault(701)) {
+		t.Error("a different UPnP error code must not be reported as transport locked")
+	}
+	if isTransportLocked(errors.New("some other error")) {
+		t.Error("a non-SOAP-fault error must not be reported as transport locked")
+	}
+	if isTransportLocked(nil) {
+		t.Error("a nil error must not be reported as transport locked")
+	}
+}
+
+func TestRetryTransportLocked(t *testing.T) {
+	t.Run("succeeds on first attempt without retrying", func(t *testing.T) {
+		calls := 0
+		err := retryTransportLocked(t.Context(), 5, time.Millisecond, func() error {
+			calls++
+			return nil
+		})
+		if err != nil {
+			t.Fatalf("retryTransportLocked() error = %v, want nil", err)
+		}
+		if calls != 1 {
+			t.Errorf("calls = %d, want 1", calls)
+		}
+	})
+
+	t.Run("retries while locked then succeeds", func(t *testing.T) {
+		calls := 0
+		err := retryTransportLocked(t.Context(), 5, time.Millisecond, func() error {
+			calls++
+			if calls < 3 {
+				return transportLockedFault(705)
+			}
+			return nil
+		})
+		if err != nil {
+			t.Fatalf("retryTransportLocked() error = %v, want nil", err)
+		}
+		if calls != 3 {
+			t.Errorf("calls = %d, want 3", calls)
+		}
+	})
+
+	t.Run("a non-lock error returns immediately without retrying", func(t *testing.T) {
+		calls := 0
+		wantErr := errors.New("boom")
+		err := retryTransportLocked(t.Context(), 5, time.Millisecond, func() error {
+			calls++
+			return wantErr
+		})
+		if !errors.Is(err, wantErr) {
+			t.Fatalf("retryTransportLocked() error = %v, want %v", err, wantErr)
+		}
+		if calls != 1 {
+			t.Errorf("calls = %d, want 1 (no retry)", calls)
+		}
+	})
+
+	t.Run("exhausting retries returns the last lock error", func(t *testing.T) {
+		calls := 0
+		err := retryTransportLocked(t.Context(), 3, time.Millisecond, func() error {
+			calls++
+			return transportLockedFault(705)
+		})
+		if !isTransportLocked(err) {
+			t.Fatalf("retryTransportLocked() error = %v, want a transport-locked error", err)
+		}
+		if calls != 3 {
+			t.Errorf("calls = %d, want 3", calls)
+		}
+	})
+
+	t.Run("context cancellation stops retrying early", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(t.Context())
+		calls := 0
+		err := retryTransportLocked(ctx, 5, 50*time.Millisecond, func() error {
+			calls++
+			if calls == 1 {
+				cancel()
+			}
+			return transportLockedFault(705)
+		})
+		if !isTransportLocked(err) {
+			t.Fatalf("retryTransportLocked() error = %v, want a transport-locked error", err)
+		}
+		if calls != 1 {
+			t.Errorf("calls = %d, want 1 (cancellation should stop further retries)", calls)
+		}
+	})
 }
